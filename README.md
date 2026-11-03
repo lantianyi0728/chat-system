@@ -188,7 +188,70 @@ sqlite3 data/chat.db "SELECT * FROM messages ORDER BY id DESC LIMIT 10;"
 
 ---
 
-## 七、目录
+## 七、用 Navicat / DBeaver 等图形工具查看数据库
+
+命令行看数据不够直观时，可以用 Navicat 连接这个 `.db` 文件。
+
+### 连接步骤
+
+1. Navicat → 左上角「连接」→ 选 **SQLite**
+2. **连接名**：随便填
+3. **类型**：现有的数据库文件
+4. **数据库文件**：选到 `data/chat.db`
+5. **用户名 / 密码：全部留空** —— SQLite 是文件型数据库，没有账号体系。
+   填了密码反而可能被当成 SQLCipher 加密密钥，导致打不开。
+
+### 报错 `14 - unable to open database file` 怎么解决
+
+这个错误是 SQLite 的 `SQLITE_CANTOPEN`，意思就是"文件打不开"，常见三个原因，按顺序排查：
+
+**① 路径里有中文（最常见）**
+
+`web课训练文件夹` 这类中文目录名，在中文 Windows 下 Navicat 可能按 GBK 传路径，而 SQLite 期望 UTF-8，结果路径解析成乱码 → 找不到文件 → 报 14。
+
+解决办法：给数据库目录做一个**纯英文的目录联接**（不是复制，指向同一个文件）：
+
+```cmd
+mklink /J C:\Users\Admin\chatdb "C:\Users\Admin\Desktop\web课训练文件夹\chatWB20261103\data"
+```
+
+之后 Navicat 里把「数据库文件」改成：
+
+```
+C:\Users\Admin\chatdb\chat.db
+```
+
+> 目录联接（junction）不需要管理员权限。注意：如果以后移动了项目文件夹，联接会失效，重新执行一次 `mklink /J` 即可。
+
+**② 文件被服务进程占用**
+
+`server.js` 正在运行时，`chat.db` 是被打开的。虽然 SQLite 支持多进程共享读，但 Navicat 在 Windows 上偶尔会拿不到句柄。先在运行服务的窗口按 `Ctrl + C` 停掉，再连接。
+
+**③ WAL 日志残留**
+
+`server.js` 用的是 WAL 模式，运行期间会生成 `chat.db-wal`、`chat.db-shm`。正常停服务（`Ctrl+C`）后这两个文件会自动消失；如果是强制结束进程，可能残留。残留时手动删掉这两个文件也不会丢数据（数据已合并进 `chat.db`）。
+
+**备份的正确姿势**：WAL 模式下如果直接拷 `chat.db`，可能拷到一个几乎空的文件（数据还在 `-wal` 里）。要么**先停服务**再拷，要么三个文件一起拷，要么先执行：
+
+```bash
+sqlite3 data/chat.db "PRAGMA wal_checkpoint(TRUNCATE);"
+```
+
+把日志合并回主文件后再拷。
+
+### 连上之后能看到什么
+
+| 表 | 说明 |
+| --- | --- |
+| `users` | 账号。`password_hash` 是 scrypt 哈希，看不到明文密码（这是设计如此） |
+| `messages` | 聊天记录。`sender_id` / `receiver_id` 对应 `users.id` |
+| `sessions` | 登录态 token。删掉某一行等于让那个登录失效 |
+
+> 直接在 Navicat 里改数据是可以的，但改完记得刷新浏览器页面；改 `users` 表时不要动 `password_hash` 和 `salt`，否则那个账号会登不进去。
+
+---
+
+## 八、目录
 
 ```
 chatWB20261103/
