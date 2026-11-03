@@ -2,6 +2,17 @@
 
 一个**零第三方依赖**的局域网聊天系统。数据全部存在本机 SQLite 文件里，不经过任何云服务。
 
+## 两个版本
+
+| 版本 | 地址 | 数据库在哪 | 说明 |
+| --- | --- | --- | --- |
+| **局域网版**（完整） | `http://<本机IP>:8000` | 本机 `data/chat.db` 文件 | 真正的多人聊天，同一 WiFi 下所有设备共享一份数据 |
+| **在线演示版** | https://lantianyi0728.github.io/chat-system/ | 各人浏览器自己的 IndexedDB | 纯静态托管，SQLite 以 WebAssembly 运行，无需后端 |
+
+在线演示版源码在 `docs/` 目录，用 `sql.js`（SQLite 编译成 wasm）+ IndexedDB 实现，
+表结构、SQL 语句、接口字段与服务器版完全一致，只是把 HTTP 请求换成了浏览器内直接执行 SQL。
+两者数据互不相通——演示版的数据存在访问者自己的浏览器里。
+
 ---
 
 ## 一、怎么启动
@@ -258,10 +269,16 @@ chatWB20261103/
 ├── server.js          HTTP 服务 + 接口 + 数据库访问（全文带注释）
 ├── 启动.bat           Windows 一键启动
 ├── README.md          本文件
-├── public/
+├── public/            ★ 局域网版前端（配合 server.js）
 │   ├── index.html     页面结构
 │   ├── style.css      样式
-│   └── app.js         交互逻辑
+│   └── app.js         交互逻辑（走 /api/* 请求）
+├── docs/              ★ 在线演示版（GitHub Pages 托管，不需要后端）
+│   ├── index.html
+│   ├── style.css
+│   ├── app-local.js   界面逻辑（仅 api() 换成调用本地 SQLite）
+│   ├── sqlite-local.js 浏览器端 SQLite：sql.js + IndexedDB + PBKDF2
+│   └── vendor/        sql-wasm.js / sql-wasm.wasm
 └── data/
-    └── chat.db        SQLite 数据库（自动生成）
+    └── chat.db        SQLite 数据库（自动生成，不入库）
 ```
