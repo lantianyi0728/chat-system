@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>轻聊 · 局域网聊天</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ============ 登录 / 注册 界面 ============ -->
+  <div id="authView" class="auth-view">
+    <div class="auth-card">
+      <div class="auth-logo">聊</div>
+      <h1 class="auth-title">轻聊</h1>
+      <p class="auth-sub">局域网即时聊天 · 数据存在本机 SQLite</p>
+
+      <div class="tabs">
+        <button class="tab active" data-mode="login">登录</button>
+        <button class="tab" data-mode="register">注册</button>
+      </div>
+
+      <form id="authForm" autocomplete="off">
+        <label class="field">
+          <span>用户名</span>
+          <input id="username" type="text" placeholder="2-16 个字符，可中文" maxlength="16" required>
+        </label>
+        <label class="field">
+          <span>密码</span>
+          <input id="password" type="password" placeholder="至少 4 位" maxlength="32" required>
+        </label>
+
+        <p id="authMsg" class="auth-msg"></p>
+
+        <button id="authSubmit" class="btn-primary" type="submit">登 录</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ 聊天主界面 ============ -->
+  <div id="chatView" class="chat-view hidden">
+
+    <!-- 左侧：账号列表 -->
+    <aside class="sidebar">
+      <header class="sidebar-head">
+        <div class="me-box">
+          <div id="myAvatar" class="avatar">我</div>
+          <div class="me-info">
+            <strong id="myName">—</strong>
+            <span class="me-status">在线</span>
+          </div>
+        </div>
+        <button id="logoutBtn" class="btn-ghost" title="退出登录">退出</button>
+      </header>
+
+      <div class="sidebar-label">全部账号</div>
+      <ul id="userList" class="user-list"></ul>
+    </aside>
+
+    <!-- 右侧：对话区 -->
+    <main class="chat-main">
+      <!-- 未选人时的占位 -->
+      <div id="emptyState" class="empty-state">
+        <div class="empty-icon">💬</div>
+        <p>从左侧选择一个账号，开始聊天</p>
+      </div>
+
+      <!-- 对话内容 -->
+      <div id="conversation" class="conversation hidden">
+        <header class="chat-head">
+          <button id="backBtn" class="btn-back" title="返回列表">←</button>
+          <div id="peerAvatar" class="avatar avatar-sm">?</div>
+          <div>
+            <strong id="peerName">—</strong>
+            <span class="peer-hint">局域网直连</span>
+          </div>
+        </header>
+
+        <div id="messageList" class="message-list"></div>
+
+        <form id="sendForm" class="composer">
+          <textarea id="messageInput" rows="1" placeholder="输入消息，Enter 发送 / Shift+Enter 换行"
+                    maxlength="1000"></textarea>
+          <button id="sendBtn" class="btn-send" type="submit">发送</button>
+        </form>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
