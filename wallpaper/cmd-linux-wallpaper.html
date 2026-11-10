@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>命令速查壁纸</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:1920px; height:1080px; overflow:hidden; }
+  body {
+    font-family: "PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+    background:#000000; color:#ffffff;
+    padding:14px 24px 12px;
+    display:flex; flex-direction:column;
+  }
+  .title { text-align:center; margin-bottom:8px; }
+  .title h1 { font-size:25px; font-weight:800; letter-spacing:5px; color:#ffffff; }
+  .title p { color:#8a97ab; font-size:12px; margin-top:3px; letter-spacing:1px; }
+
+  .grid {
+    flex:1; min-height:0;
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-auto-rows: 1fr;
+    gap:12px;
+  }
+  .card {
+    border:1px solid #2a2f3a; border-radius:8px; overflow:hidden;
+    display:flex; flex-direction:column; min-height:0; background:#050505;
+  }
+  .card-title {
+    text-align:center; font-size:13.5px; font-weight:700; padding:5px;
+    color:#ffffff; background:#0c0c0c; border-bottom:1px solid #2a2f3a; letter-spacing:1px;
+  }
+  table { width:100%; border-collapse:collapse; flex:1; table-layout:fixed; }
+  td { border-bottom:1px solid #1c1f26; padding:3px 9px; vertical-align:middle; }
+  td.cmd {
+    color:#ffffff; font-family: Consolas,"Courier New",monospace;
+    font-size:12.5px; font-weight:700; line-height:1.2;
+    border-right:1px solid #2a2f3a; width:55%;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  td.desc { color:#4ade80; font-size:10.5px; line-height:1.2; }
+  .footer { text-align:center; color:#7a8aa0; font-size:11px; margin-top:6px; letter-spacing:1px; }
+</style>
+</head>
+<body>
+  <div class="title">
+    <h1>命令速查壁纸</h1>
+    <p>Linux · Windows CMD · Git · 快捷键　|　白字为命令，绿字为说明</p>
+  </div>
+
+  <div class="grid">
+    
+    <div class="card">
+      <div class="card-title">Linux · 文件与目录</div>
+      <table>
+        <tbody>
+      <tr>
+        <td class="cmd">pwd</td>
+        <td class="desc">显示当前所在目录</td>
+      </tr>
+      <tr>
+        <td class="cmd">ls -la</td>
+        <td class="desc">列出全部文件(含隐藏)及详情</td>
+      </tr>
+      <tr>
+        <td class="cmd">cd ~</td>
+        <td class="desc">回到用户主目录</td>
+      </tr>
+      <tr>
+        <td class="cmd">cd ..</td>
+        <td class="desc">返回上一级目录</td>
+      </tr>
+      <tr>
+        <td class="cmd">cd /path</td>
+        <td class="desc">切换到指定目录</td>
+      </tr>
+      <tr>
+        <td class="cmd">mkdir dir</td>
+        <td class="desc">新建文件夹</td>
+      </tr>
+      <tr>
+        <td class="cmd">touch a.txt</td>
+        <td class="desc">新建空文件</td>
+      </tr>
+      <tr>
+        <td class="cmd">cp 源 目标</td>
+        <td class="desc">复制文件或目录</td>
+      </tr>
+      <tr>
+        <td class="cmd">mv 旧 新</td>
+        <td class="desc">移动或重命名</td>
+      </tr>
+      <tr>
+        <td class="cmd">rm 文件</td>
+        <td class="desc">删除文件</td>
+      </tr>
+      <tr>
+        <td class="cmd">rm -rf dir</td>
+        <td class="desc">强制删除文件夹</td>
+      </tr>
+      <tr>
+        <td class="cmd">cat 文件</td>
+        <td class="desc">查看文件全部内容</td>
+      </tr>
+      <tr>
+        <td class="cmd">less 文件</td>
+        <td class="desc">分页查看(空格翻页)</td>
+      </tr>
+      <tr>
+        <td class="cmd">head -n 5 f</td>
+        <td class="desc">查看文件前 5 行</td>
+      </tr>
+      <tr>
+        <td class="cmd">tail -f 文件</td>
+        <td class="desc">实时追踪文件末尾</td>
+      </tr>
+      <tr>
+        <td class="cmd">ln -s 源 链接</td>
+        <td class="desc">创建软链接</td>
+      </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">Linux · 系统 / 进程 / 网络</div>
+      <table>
+        <tbody>
+      <tr>
+        <td class="cmd">ps aux</td>
+        <td class="desc">查看所有进程</td>
+      </tr>
+      <tr>
+        <td class="cmd">top</td>
+        <td class="desc">实时监控资源占用</td>
+      </tr>
+      <tr>
+        <td class="cmd">kill 1234</td>
+        <td class="desc">结束指定 PID 进程</td>
+      </tr>
+      <tr>
+        <td class="cmd">kill -9 1234</td>
+        <td class="desc">强制结束进程</td>
+      </tr>
+      <tr>
+        <td class="cmd">df -h</td>
+        <td class="desc">查看磁盘剩余空间</td>
+      </tr>
+      <tr>
+        <td class="cmd">du -sh dir</td>
+        <td class="desc">统计目录占用大小</td>
+      </tr>
+      <tr>
+        <td class="cmd">free -m</td>
+        <td class="desc">查看内存使用情况</td>
+      </tr>
+      <tr>
+        <td class="cmd">uname -a</td>
+        <td class="desc">查看内核与系统信息</td>
+      </tr>
+      <tr>
+        <td class="cmd">ifconfig</td>
+        <td class="desc">查看网卡 IP 地址</td>
+      </tr>
+      <tr>
+        <td class="cmd">ping 主机</td>
+        <td class="desc">测试网络连通性</td>
+      </tr>
+      <tr>
+        <td class="cmd">wget 网址</td>
+        <td class="desc">下载网络文件</td>
+      </tr>
+      <tr>
+        <td class="cmd">curl -O 网址</td>
+        <td class="desc">下载并显示进度</td>
+      </tr>
+      <tr>
+        <td class="cmd">netstat -tunlp</td>
+        <td class="desc">查看监听端口</td>
+      </tr>
+      <tr>
+        <td class="cmd">chmod 755 文件</td>
+        <td class="desc">修改文件权限</td>
+      </tr>
+      <tr>
+        <td class="cmd">sudo 命令</td>
+        <td class="desc">以管理员身份执行</td>
+      </tr>
+      <tr>
+        <td class="cmd">uptime</td>
+        <td class="desc">查看运行时长与负载</td>
+      </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">CMD · Windows 常用</div>
+      <table>
+        <tbody>
+      <tr>
+        <td class="cmd">echo %cd%</td>
+        <td class="desc">显示当前目录</td>
+      </tr>
+      <tr>
+        <td class="cmd">cd</td>
+        <td class="desc">切换目录</td>
+      </tr>
+      <tr>
+        <td class="cmd">cd ..</td>
+        <td class="desc">返回上一级</td>
+      </tr>
+      <tr>
+        <td class="cmd">dir</td>
+        <td class="desc">列出当前目录文件</td>
+      </tr>
+      <tr>
+        <td class="cmd">md 名字</td>
+        <td class="desc">新建文件夹</td>
+      </tr>
+      <tr>
+        <td class="cmd">type nul &gt; a.txt</td>
+        <td class="desc">新建空文件</td>
+      </tr>
+      <tr>
+        <td class="cmd">copy 源 目标</td>
+        <td class="desc">复制文件</td>
+      </tr>
+      <tr>
+        <td class="cmd">move 旧 新</td>
+        <td class="desc">移动 / 重命名</td>
+      </tr>
+      <tr>
+        <td class="cmd">del 文件</td>
+        <td class="desc">删除文件</td>
+      </tr>
+      <tr>
+        <td class="cmd">rmdir /s dir</td>
+        <td class="desc">删除文件夹</td>
+      </tr>
+      <tr>
+        <td class="cmd">type 文件</td>
+        <td class="desc">查看文本文件内容</td>
+      </tr>
+      <tr>
+        <td class="cmd">cls</td>
+        <td class="desc">清屏</td>
+      </tr>
+      <tr>
+        <td class="cmd">systeminfo</td>
+        <td class="desc">查看系统信息</td>
+      </tr>
+      <tr>
+        <td class="cmd">shutdown /s</td>
+        <td class="desc">关机</td>
+      </tr>
+      <tr>
+        <td class="cmd">shutdown /r</td>
+        <td class="desc">重启</td>
+      </tr>
+      <tr>
+        <td class="cmd">where 名字</td>
+        <td class="desc">查找命令路径</td>
+      </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">CMD · 进程 / 网络 / 磁盘</div>
+      <table>
+        <tbody>
+      <tr>
+        <td class="cmd">tasklist</td>
+        <td class="desc">查看运行中的进程</td>
+      </tr>
+      <tr>
+        <td class="cmd">taskkill /pid 1234</td>
+        <td class="desc">结束指定进程</td>
+      </tr>
+      <tr>
+        <td class="cmd">taskmgr</td>
+        <td class="desc">打开任务管理器</td>
+      </tr>
+      <tr>
+        <td class="cmd">ipconfig</td>
+        <td class="desc">查看网络配置</td>
+      </tr>
+      <tr>
+        <td class="cmd">ipconfig /flushdns</td>
+        <td class="desc">刷新 DNS 缓存</td>
+      </tr>
+      <tr>
+        <td class="cmd">ping 主机</td>
+        <td class="desc">测试网络连通</td>
+      </tr>
+      <tr>
+        <td class="cmd">tracert 主机</td>
+        <td class="desc">追踪路由路径</td>
+      </tr>
+      <tr>
+        <td class="cmd">netstat -an</td>
+        <td class="desc">查看所有连接</td>
+      </tr>
+      <tr>
+        <td class="cmd">chkdsk</td>
+        <td class="desc">检查磁盘错误</td>
+      </tr>
+      <tr>
+        <td class="cmd">wmic logicaldisk</td>
+        <td class="desc">查看磁盘空间</td>
+      </tr>
+      <tr>
+        <td class="cmd">sfc /scannow</td>
+        <td class="desc">修复系统文件</td>
+      </tr>
+      <tr>
+        <td class="cmd">compact /c dir</td>
+        <td class="desc">压缩目录</td>
+      </tr>
+      <tr>
+        <td class="cmd">powershell</td>
+        <td class="desc">启动 PowerShell</td>
+      </tr>
+      <tr>
+        <td class="cmd">help</td>
+        <td class="desc">查看命令帮助</td>
+      </tr>
+      <tr>
+        <td class="cmd">ver</td>
+        <td class="desc">查看系统版本</td>
+      </tr>
+      <tr>
+        <td class="cmd">assoc</td>
+        <td class="desc">查看文件类型关联</td>
+      </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">Git · 版本控制</div>
+      <table>
+        <tbody>
+      <tr>
+        <td class="cmd">git init</td>
+        <td class="desc">初始化仓库</td>
+      </tr>
+      <tr>
+        <td class="cmd">git clone 网址</td>
+        <td class="desc">克隆远程仓库</td>
+      </tr>
+      <tr>
+        <td class="cmd">git add .</td>
+        <td class="desc">暂存所有改动</td>
+      </tr>
+      <tr>
+        <td class="cmd">git commit -m &quot;x&quot;</td>
+        <td class="desc">提交到本地</td>
+      </tr>
+      <tr>
+        <td class="cmd">git status</td>
+        <td class="desc">查看当前状态</td>
+      </tr>
+      <tr>
+        <td class="cmd">git diff</td>
+        <td class="desc">查看具体改动</td>
+      </tr>
+      <tr>
+        <td class="cmd">git log --oneline</td>
+        <td class="desc">查看提交历史</td>
+      </tr>
+      <tr>
+        <td class="cmd">git branch</td>
+        <td class="desc">查看分支列表</td>
+      </tr>
+      <tr>
+        <td class="cmd">git checkout -b x</td>
+        <td class="desc">新建并切换分支</td>
+      </tr>
+      <tr>
+        <td class="cmd">git merge x</td>
+        <td class="desc">合并指定分支</td>
+      </tr>
+      <tr>
+        <td class="cmd">git pull</td>
+        <td class="desc">拉取并合并更新</td>
+      </tr>
+      <tr>
+        <td class="cmd">git push</td>
+        <td class="desc">推送到远程</td>
+      </tr>
+      <tr>
+        <td class="cmd">git remote -v</td>
+        <td class="desc">查看远程地址</td>
+      </tr>
+      <tr>
+        <td class="cmd">git reset --hard</td>
+        <td class="desc">回退到上一版本</td>
+      </tr>
+      <tr>
+        <td class="cmd">git stash</td>
+        <td class="desc">暂存未提交改动</td>
+      </tr>
+      <tr>
+        <td class="cmd">git clone -b x 网址</td>
+        <td class="desc">克隆指定分支</td>
+      </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">快捷键 · 通用</div>
+      <table>
+        <tbody>
+      <tr>
+        <td class="cmd">Ctrl + C</td>
+        <td class="desc">复制选中内容</td>
+      </tr>
+      <tr>
+        <td class="cmd">Ctrl + V</td>
+        <td class="desc">粘贴</td>
+      </tr>
+      <tr>
+        <td class="cmd">Ctrl + X</td>
+        <td class="desc">剪切</td>
+      </tr>
+      <tr>
+        <td class="cmd">Ctrl + Z</td>
+        <td class="desc">撤销</td>
+      </tr>
+      <tr>
+        <td class="cmd">Ctrl + A</td>
+        <td class="desc">全选</td>
+      </tr>
+      <tr>
+        <td class="cmd">Ctrl + S</td>
+        <td class="desc">保存文件</td>
+      </tr>
+      <tr>
+        <td class="cmd">Ctrl + F</td>
+        <td class="desc">查找内容</td>
+      </tr>
+      <tr>
+        <td class="cmd">Tab</td>
+        <td class="desc">命令自动补全</td>
+      </tr>
+      <tr>
+        <td class="cmd">↑ / ↓</td>
+        <td class="desc">浏览历史命令</td>
+      </tr>
+      <tr>
+        <td class="cmd">Alt + Tab</td>
+        <td class="desc">切换窗口</td>
+      </tr>
+      <tr>
+        <td class="cmd">Win + D</td>
+        <td class="desc">显示桌面</td>
+      </tr>
+      <tr>
+        <td class="cmd">Win + E</td>
+        <td class="desc">打开文件管理器</td>
+      </tr>
+      <tr>
+        <td class="cmd">Win + R</td>
+        <td class="desc">打开运行窗口</td>
+      </tr>
+      <tr>
+        <td class="cmd">Ctrl + L</td>
+        <td class="desc">终端清屏(Linux)</td>
+      </tr>
+      <tr>
+        <td class="cmd">Ctrl + R</td>
+        <td class="desc">搜索历史命令</td>
+      </tr>
+      <tr>
+        <td class="cmd">Win + L</td>
+        <td class="desc">锁定计算机</td>
+      </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer">提示：Linux 区分大小写；CMD 参数常用 /（如 shutdown /s）；Git 命令需在仓库目录内使用</div>
+</body>
+</html>

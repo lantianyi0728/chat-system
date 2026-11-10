@@ -144,6 +144,35 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_msg_unread ON messages(receiver_id, is_read);
 `);
 
+/* 个人资料表：一个用户一行，外键级联删除 */
+db.exec(`
+  CREATE TABLE IF NOT EXISTS profiles (
+    user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    display_name TEXT,
+    birthday     TEXT,
+    school       TEXT,
+    address      TEXT,
+    avatar       TEXT
+  );
+
+  /* 表情包表：每个用户自己的图片表情，一行一张图 */
+  CREATE TABLE IF NOT EXISTS stickers (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    image_path  TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+  );
+`);
+
+/* 消息表新增 type 列：text=文字，image=图片消息。
+   老库可能已有 messages 表且没有 type 列，这里做一次安全迁移 */
+(function migrateMessages() {
+  const cols = db.prepare('PRAGMA table_info(messages)').all();
+  if (!cols.some((c) => c.name === 'type')) {
+    db.exec("ALTER TABLE messages ADD COLUMN type TEXT NOT NULL DEFAULT 'text'");
+  }
+})();
+
 /* ----------------------------------------------------------------------------
  *  第 3 步：预编译语句（prepare）
  * ----------------------------------------------------------------------------
@@ -166,23 +195,30 @@ const SQL = {
       u.id,
       u.username,
       u.created_at,
+      COALESCE(p.display_name, u.username) AS display_name,
+      p.avatar AS avatar,
       (SELECT COUNT(*) FROM messages m
         WHERE m.sender_id = u.id AND m.receiver_id = ? AND m.is_read = 0) AS unread,
       (SELECT m2.content FROM messages m2
         WHERE (m2.sender_id = u.id AND m2.receiver_id = ?)
            OR (m2.sender_id = ? AND m2.receiver_id = u.id)
-        ORDER BY m2.id DESC LIMIT 1) AS last_message
+        ORDER BY m2.id DESC LIMIT 1) AS last_message,
+      (SELECT m2.type FROM messages m2
+        WHERE (m2.sender_id = u.id AND m2.receiver_id = ?)
+           OR (m2.sender_id = ? AND m2.receiver_id = u.id)
+        ORDER BY m2.id DESC LIMIT 1) AS last_type
     FROM users u
+    LEFT JOIN profiles p ON p.user_id = u.id
     WHERE u.id <> ?
     ORDER BY unread DESC, u.username ASC
   `),
 
   insertMessage: db.prepare(
-    `INSERT INTO messages (sender_id, receiver_id, content, created_at) VALUES (?, ?, ?, ?)`
+    `INSERT INTO messages (sender_id, receiver_id, content, type, created_at) VALUES (?, ?, ?, ?, ?)`
   ),
   // 只取双方之间的对话，按 id 升序（id 自增，等价于时间顺序）
   conversation: db.prepare(`
-    SELECT id, sender_id, receiver_id, content, created_at
+    SELECT id, sender_id, receiver_id, content, type, created_at
     FROM messages
     WHERE (sender_id = ? AND receiver_id = ?)
        OR (sender_id = ? AND receiver_id = ?)
@@ -203,6 +239,34 @@ const SQL = {
     WHERE s.token = ?
   `),
   deleteSession: db.prepare(`DELETE FROM sessions WHERE token = ?`),
+
+  /* 个人资料 */
+  getProfile: db.prepare(
+    `SELECT display_name, birthday, school, address, avatar FROM profiles WHERE user_id = ?`
+  ),
+  upsertProfile: db.prepare(`
+    INSERT INTO profiles (user_id, display_name, birthday, school, address, avatar)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET
+      display_name = excluded.display_name,
+      birthday     = excluded.birthday,
+      school       = excluded.school,
+      address      = excluded.address,
+      avatar       = excluded.avatar
+  `),
+  ensureProfile: db.prepare(`INSERT OR IGNORE INTO profiles (user_id) VALUES (?)`),
+  setAvatar: db.prepare(`UPDATE profiles SET avatar = ? WHERE user_id = ?`),
+
+  /* 表情包（用户自己的图片表情） */
+  insertSticker: db.prepare(
+    `INSERT INTO stickers (user_id, image_path, created_at) VALUES (?, ?, ?)`
+  ),
+  listStickers: db.prepare(
+    `SELECT id, image_path, created_at FROM stickers WHERE user_id = ? ORDER BY id DESC`
+  ),
+  deleteSticker: db.prepare(
+    `DELETE FROM stickers WHERE id = ? AND user_id = ?`
+  ),
 };
 
 
@@ -290,6 +354,28 @@ function readJSON(req) {
   });
 }
 
+// 把前端传来的 data:image/...;base64,... 解码成文件，落到 public/uploads/<subdir>/
+// 返回可被静态服务直接访问的相对路径，如 /uploads/avatars/ab12cd.png
+function saveImageDataURL(dataURL, subdir) {
+  const m = /^data:image\/(png|jpe?g|gif|webp);base64,(.+)$/i.exec(String(dataURL || '').trim());
+  if (!m) throw new Error('只支持 PNG / JPG / GIF / WEBP 图片');
+  const ext = m[1].toLowerCase() === 'jpeg' ? 'jpg' : m[1].toLowerCase();
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > 2 * 1024 * 1024) throw new Error('图片不能超过 2MB');
+  // 简单校验文件头，挡掉伪装成图片的脚本
+  const okMagic =
+    (buf[0] === 0x89 && buf[1] === 0x50) ||   // PNG
+    (buf[0] === 0xFF && buf[1] === 0xD8) ||   // JPEG
+    (buf[0] === 0x47 && buf[1] === 0x49) ||   // GIF
+    (buf[0] === 0x52 && buf[1] === 0x49);     // WEBP(RIFF)
+  if (!okMagic) throw new Error('图片格式无法识别');
+  const dir = path.join(PUBLIC_DIR, 'uploads', subdir);
+  fs.mkdirSync(dir, { recursive: true });
+  const name = crypto.randomBytes(12).toString('hex') + '.' + ext;
+  fs.writeFileSync(path.join(dir, name), buf);
+  return '/uploads/' + subdir + '/' + name;
+}
+
 // 从 Authorization: Bearer <token> 中取出登录态
 function currentUser(req) {
   const auth = req.headers.authorization || '';
@@ -364,12 +450,22 @@ async function handleAPI(req, res, url, pathname) {
 
   // 校验 token 是否有效（前端刷新页面时先调它）
   if (pathname === '/api/me' && req.method === 'GET') {
-    return sendJSON(res, 200, { user: { id: me.id, username: me.username } });
+    const p = SQL.getProfile.get(me.id) || {};
+    return sendJSON(res, 200, {
+      user: { id: me.id, username: me.username },
+      profile: {
+        display_name: p.display_name || '',
+        birthday: p.birthday || '',
+        school: p.school || '',
+        address: p.address || '',
+        avatar: p.avatar || '',
+      },
+    });
   }
 
   // 账号列表（除自己以外的所有人 + 未读数 + 最后一条消息摘要）
   if (pathname === '/api/users' && req.method === 'GET') {
-    const rows = SQL.listUsers.all(me.id, me.id, me.id, me.id);
+    const rows = SQL.listUsers.all(me.id, me.id, me.id, me.id, me.id, me.id);
     return sendJSON(res, 200, { users: rows });
   }
 
@@ -387,28 +483,91 @@ async function handleAPI(req, res, url, pathname) {
     return sendJSON(res, 200, { messages: rows });
   }
 
-  // 发送消息
+  // 发送消息（支持文字 text 与图片 image 两种类型）
   if (pathname === '/api/messages' && req.method === 'POST') {
-    const { toUserId, content } = await readJSON(req);
-    const peerId = Number(toUserId);
-    const text = String(content || '').trim();
+    const body = await readJSON(req);
+    const peerId = Number(body.toUserId);
+    const type = body.type === 'image' ? 'image' : 'text';
+    const text = String(body.content || '').trim();
 
     if (!Number.isInteger(peerId) || !SQL.findUserById.get(peerId)) {
       return sendJSON(res, 400, { error: '接收人不存在' });
     }
-    if (!text) return sendJSON(res, 400, { error: '消息不能为空' });
-    if (text.length > 1000) return sendJSON(res, 400, { error: '消息最长 1000 字' });
 
-    const info = SQL.insertMessage.run(me.id, peerId, text, nowISO());
+    if (type === 'image') {
+      // 图片消息：content 必须是本服务自己生成的 /uploads/ 路径，杜绝任意文件读取
+      if (!/^\/uploads\/[a-zA-Z0-9_./-]+\.(png|jpe?g|gif|webp)$/i.test(text)) {
+        return sendJSON(res, 400, { error: '图片地址不合法' });
+      }
+    } else {
+      if (!text) return sendJSON(res, 400, { error: '消息不能为空' });
+      if (text.length > 1000) return sendJSON(res, 400, { error: '消息最长 1000 字' });
+    }
+
+    const info = SQL.insertMessage.run(me.id, peerId, text, type, nowISO());
     return sendJSON(res, 200, {
       message: {
         id: Number(info.lastInsertRowid),
         sender_id: me.id,
         receiver_id: peerId,
         content: text,
+        type: type,
         created_at: nowISO(),
       },
     });
+  }
+
+  /* ---------- 6.5 个人资料保存 ---------- */
+  if (pathname === '/api/profile' && req.method === 'PUT') {
+    const b = await readJSON(req);
+    const cur = SQL.getProfile.get(me.id) || {};
+    const display_name = String(b.display_name ?? cur.display_name ?? '').slice(0, 20);
+    const birthday = String(b.birthday ?? cur.birthday ?? '').slice(0, 20) || null;
+    const school = String(b.school ?? cur.school ?? '').slice(0, 50) || null;
+    const address = String(b.address ?? cur.address ?? '').slice(0, 100) || null;
+    const avatar = cur.avatar || '';
+    SQL.upsertProfile.run(me.id, display_name, birthday, school, address, avatar);
+    return sendJSON(res, 200, { ok: true });
+  }
+
+  /* ---------- 6.6 头像上传 ---------- */
+  if (pathname === '/api/avatar' && req.method === 'POST') {
+    const b = await readJSON(req);
+    let relPath;
+    try {
+      relPath = saveImageDataURL(b.image, 'avatars');
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+    SQL.ensureProfile.run(me.id);
+    SQL.setAvatar.run(relPath, me.id);
+    return sendJSON(res, 200, { avatar: relPath });
+  }
+
+  /* ---------- 6.7 表情包（用户自己的图片表情） ---------- */
+  if (pathname === '/api/stickers' && req.method === 'GET') {
+    const rows = SQL.listStickers.all(me.id);
+    return sendJSON(res, 200, {
+      stickers: rows.map((r) => ({ id: r.id, image_path: r.image_path })),
+    });
+  }
+  if (pathname === '/api/stickers' && req.method === 'POST') {
+    const b = await readJSON(req);
+    let relPath;
+    try {
+      relPath = saveImageDataURL(b.image, 'stickers');
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+    const info = SQL.insertSticker.run(me.id, relPath, nowISO());
+    return sendJSON(res, 200, {
+      sticker: { id: Number(info.lastInsertRowid), image_path: relPath },
+    });
+  }
+  if (pathname === '/api/stickers' && req.method === 'DELETE') {
+    const b = await readJSON(req);
+    SQL.deleteSticker.run(Number(b.id), me.id);
+    return sendJSON(res, 200, { ok: true });
   }
 
   return sendJSON(res, 404, { error: '接口不存在' });

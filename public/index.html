@@ -44,14 +44,17 @@
     <!-- 左侧：账号列表 -->
     <aside class="sidebar">
       <header class="sidebar-head">
-        <div class="me-box">
+        <div class="me-box" id="meBox" title="点击编辑个人资料">
           <div id="myAvatar" class="avatar">我</div>
           <div class="me-info">
             <strong id="myName">—</strong>
             <span class="me-status">在线</span>
           </div>
         </div>
-        <button id="logoutBtn" class="btn-ghost" title="退出登录">退出</button>
+        <div class="head-actions">
+          <button id="profileBtn" class="btn-ghost" title="个人资料">资料</button>
+          <button id="logoutBtn" class="btn-ghost" title="退出登录">退出</button>
+        </div>
       </header>
 
       <div class="sidebar-label">全部账号</div>
@@ -79,13 +82,68 @@
 
         <div id="messageList" class="message-list"></div>
 
-        <form id="sendForm" class="composer">
-          <textarea id="messageInput" rows="1" placeholder="输入消息，Enter 发送 / Shift+Enter 换行"
-                    maxlength="1000"></textarea>
-          <button id="sendBtn" class="btn-send" type="submit">发送</button>
-        </form>
+        <div class="composer-wrap">
+          <div id="emojiPanel" class="emoji-panel hidden">
+            <div class="emoji-tabs">
+              <button class="emoji-tab active" data-tab="emoji" type="button">emoji</button>
+              <button class="emoji-tab" data-tab="sticker" type="button">我的表情包</button>
+            </div>
+            <div id="emojiGrid" class="emoji-grid"></div>
+            <div id="stickerGrid" class="sticker-grid hidden">
+              <div class="sticker-add">
+                <button id="stickerAddBtn" class="btn-soft" type="button">＋ 添加表情包</button>
+                <input id="stickerInput" type="file" accept="image/*" hidden>
+              </div>
+              <div id="stickerList" class="sticker-list"></div>
+            </div>
+          </div>
+          <form id="sendForm" class="composer">
+            <button type="button" id="emojiBtn" class="btn-emoji" title="表情 / 表情包">😊</button>
+            <textarea id="messageInput" rows="1" placeholder="输入消息，Enter 发送 / Shift+Enter 换行"
+                      maxlength="1000"></textarea>
+            <button id="sendBtn" class="btn-send" type="submit">发送</button>
+          </form>
+        </div>
       </div>
     </main>
+  </div>
+
+  <!-- 个人资料弹窗 -->
+  <div id="profileModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>个人资料</h3>
+        <button id="profileClose" class="modal-x" title="关闭">×</button>
+      </div>
+      <div class="profile-avatar-row">
+        <div id="profileAvatar" class="avatar avatar-lg">我</div>
+        <button id="avatarUploadBtn" class="btn-soft" type="button">上传头像</button>
+        <input id="avatarInput" type="file" accept="image/*" hidden>
+      </div>
+      <form id="profileForm">
+        <label class="field">
+          <span>姓名 / 昵称</span>
+          <input id="pfName" type="text" maxlength="20" placeholder="显示名称">
+        </label>
+        <label class="field">
+          <span>生日</span>
+          <input id="pfBirthday" type="date">
+        </label>
+        <label class="field">
+          <span>学校</span>
+          <input id="pfSchool" type="text" maxlength="50" placeholder="所在学校">
+        </label>
+        <label class="field">
+          <span>地址</span>
+          <input id="pfAddress" type="text" maxlength="100" placeholder="所在地址">
+        </label>
+        <p id="profileMsg" class="auth-msg"></p>
+        <div class="modal-actions">
+          <button type="button" id="profileCancel" class="btn-ghost">取消</button>
+          <button type="submit" class="btn-primary" style="width:auto;padding:0 22px;">保存</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <script src="app.js"></script>
