@@ -27,7 +27,7 @@
   /* 设置 / 壁纸 / 文字样式 / AI */
   var prefs = {
     wallpaper: '', wallpaper_scope: 'me',
-    font_size: '14', text_color: '#ffffff', input_bg: '#fbfcfe', font_family: 'system',
+    font_size: '14', text_color: '#ffffff', bubble_bg: '#3b7cf6', font_family: 'system',
     api_base: '', api_key: '', api_model: ''
   };
   var peerWallpaper = '';     // 对方「双方可见」的壁纸
@@ -140,7 +140,7 @@
   var setFontSize   = $('setFontSize');
   var fontSizeVal   = $('fontSizeVal');
   var setTextColor  = $('setTextColor');
-  var setInputBg    = $('setInputBg');
+  var setBubbleBg   = $('setBubbleBg');
   var setFontFamily = $('setFontFamily');
   var setApiBase    = $('setApiBase');
   var setApiKey     = $('setApiKey');
@@ -907,7 +907,7 @@
     var root = document.documentElement;
     root.style.setProperty('--my-font-size', (prefs.font_size || '14') + 'px');
     root.style.setProperty('--my-text-color', prefs.text_color || '#ffffff');
-    root.style.setProperty('--input-bg', prefs.input_bg || '#fbfcfe');
+    root.style.setProperty('--bubble-bg', prefs.bubble_bg || '#3b7cf6');
     root.style.setProperty('--my-font', FONT_STACKS[prefs.font_family] || FONT_STACKS.system);
   }
 
@@ -963,7 +963,7 @@
       setFontSize.value = prefs.font_size || '14';
       fontSizeVal.textContent = (prefs.font_size || '14') + 'px';
       setTextColor.value = prefs.text_color || '#ffffff';
-      setInputBg.value = prefs.input_bg || '#fbfcfe';
+      setBubbleBg.value = prefs.bubble_bg || '#3b7cf6';
       setFontFamily.value = prefs.font_family || 'system';
       setApiBase.value = prefs.api_base || '';
       setApiKey.value = prefs.api_key || '';
@@ -982,7 +982,7 @@
     var body = {
       font_size: String(setFontSize.value),
       text_color: setTextColor.value,
-      input_bg: setInputBg.value,
+      bubble_bg: setBubbleBg.value,
       font_family: setFontFamily.value,
       api_base: setApiBase.value.trim().replace(/\/+$/, ''),
       api_key: setApiKey.value.trim(),
@@ -1063,6 +1063,7 @@
   function openAiPanel() {
     aiPanel.classList.remove('hidden');
     hideSuggestion();
+    positionPanel();
     if (!aiMessages.dataset.inited) {
       aiMessages.dataset.inited = '1';
       appendAiMsg('我是聊天小精灵 🧚 配好 API 后，我可以帮你出一句回复，也能陪你聊天。', 'tip');
@@ -1106,6 +1107,7 @@
     pendingSuggestion = text;
     aiSugText.textContent = text;
     aiSuggestion.classList.remove('hidden');
+    positionSuggestion();     // 跟着小精灵当前位置走
   }
   function hideSuggestion() {
     pendingSuggestion = '';
@@ -1164,6 +1166,141 @@
       suggestBusy = false;
       lastSugTime = Date.now();
     });
+  }
+
+  /* ---------- 小精灵可拖动：位置记在本地，刷新后还在原地 ---------- */
+  var SPRITE_POS_KEY = 'ai_sprite_pos';
+
+  function placeSprite(x, y) {
+    var w = aiSprite.offsetWidth || 54;
+    var h = aiSprite.offsetHeight || 54;
+    var maxX = window.innerWidth - w - 6;
+    var maxY = window.innerHeight - h - 6;
+    x = Math.max(6, Math.min(maxX, x));
+    y = Math.max(6, Math.min(maxY, y));
+    aiSprite.style.left = x + 'px';
+    aiSprite.style.top = y + 'px';
+    aiSprite.style.right = 'auto';
+    aiSprite.style.bottom = 'auto';
+  }
+
+  function saveSpritePos() {
+    try {
+      localStorage.setItem(SPRITE_POS_KEY, JSON.stringify({
+        x: aiSprite.offsetLeft,
+        y: aiSprite.offsetTop
+      }));
+    } catch (e) { /* 无痕模式写不了，忽略 */ }
+  }
+
+  function restoreSpritePos() {
+    try {
+      var raw = localStorage.getItem(SPRITE_POS_KEY);
+      if (!raw) return;
+      var p = JSON.parse(raw);
+      if (typeof p.x === 'number' && typeof p.y === 'number') placeSprite(p.x, p.y);
+    } catch (e) { /* 忽略损坏的数据 */ }
+  }
+
+  // 建议气泡贴着精灵弹出：左边放不下就放右边，上下自动收进来
+  function positionSuggestion() {
+    var vw = window.innerWidth;
+    var w = Math.min(270, vw - 24);
+    aiSuggestion.style.width = w + 'px';
+
+    var h = aiSuggestion.offsetHeight || 96;
+    var s = aiSprite.getBoundingClientRect();
+
+    var x = s.left - w - 12;
+    if (x < 8) x = s.right + 12;
+    if (x + w > vw - 8) x = vw - w - 8;
+
+    var y = s.bottom - h;
+    y = Math.max(8, Math.min(window.innerHeight - h - 8, y));
+
+    aiSuggestion.style.left = Math.max(8, x) + 'px';
+    aiSuggestion.style.top = y + 'px';
+    aiSuggestion.style.right = 'auto';
+    aiSuggestion.style.bottom = 'auto';
+  }
+
+  // 聊天窗优先开在精灵上方，上面顶到边就开在下方
+  function positionPanel() {
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var w = Math.min(330, vw - 20);
+    var h = Math.min(430, vh - 120);
+
+    aiPanel.style.width = w + 'px';
+    aiPanel.style.height = h + 'px';
+
+    var s = aiSprite.getBoundingClientRect();
+    var x = Math.max(8, Math.min(vw - w - 8, s.right - w));
+    var y = s.top - h - 10;
+    if (y < 8) y = Math.min(vh - h - 8, s.bottom + 10);
+
+    aiPanel.style.left = x + 'px';
+    aiPanel.style.top = y + 'px';
+    aiPanel.style.right = 'auto';
+    aiPanel.style.bottom = 'auto';
+  }
+
+  function initSpriteDrag() {
+    if (!aiSprite) return;
+    var drag = null;
+
+    aiSprite.addEventListener('pointerdown', function (e) {
+      var r = aiSprite.getBoundingClientRect();
+      drag = {
+        id: e.pointerId,
+        dx: e.clientX - r.left,
+        dy: e.clientY - r.top,
+        moved: false,
+        sx: e.clientX,
+        sy: e.clientY
+      };
+      try { aiSprite.setPointerCapture(e.pointerId); } catch (err) {}
+      aiSprite.classList.add('dragging');
+    });
+
+    aiSprite.addEventListener('pointermove', function (e) {
+      if (!drag || e.pointerId !== drag.id) return;
+      if (!drag.moved) {
+        // 手指/鼠标抖动几像素不算拖动，避免误触把点击吃掉
+        if (Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) < 5) return;
+        drag.moved = true;
+      }
+      placeSprite(e.clientX - drag.dx, e.clientY - drag.dy);
+    });
+
+    aiSprite.addEventListener('pointerup', function (e) {
+      if (!drag || e.pointerId !== drag.id) return;
+      var moved = drag.moved;
+      drag = null;
+      aiSprite.classList.remove('dragging');
+      if (moved) {
+        saveSpritePos();
+        hideSuggestion();
+        if (!aiPanel.classList.contains('hidden')) positionPanel();
+      } else {
+        toggleAiPanel();          // 没有移动，就当成普通点击
+      }
+    });
+
+    aiSprite.addEventListener('pointercancel', function () {
+      drag = null;
+      aiSprite.classList.remove('dragging');
+    });
+
+    // 窗口缩放后别把精灵留在屏幕外
+    window.addEventListener('resize', function () {
+      var r = aiSprite.getBoundingClientRect();
+      placeSprite(r.left, r.top);
+      if (!aiPanel.classList.contains('hidden')) positionPanel();
+      if (!aiSuggestion.classList.contains('hidden')) positionSuggestion();
+    });
+
+    restoreSpritePos();
   }
 
   /* ================================================================
@@ -1263,8 +1400,8 @@
       '--my-font', FONT_STACKS[setFontFamily.value] || FONT_STACKS.system);
   });
 
-  /* AI 小精灵 */
-  if (aiSprite) aiSprite.addEventListener('click', toggleAiPanel);
+  /* AI 小精灵（点击开面板 / 按住拖动换位置） */
+  initSpriteDrag();
   if (aiPanelClose) aiPanelClose.addEventListener('click', closeAiPanel);
   if (aiSugSend) aiSugSend.addEventListener('click', sendSuggestion);
   if (aiSugClose) aiSugClose.addEventListener('click', hideSuggestion);

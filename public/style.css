@@ -677,13 +677,13 @@ body {
 .wallpaper-ops { display:flex; gap:8px; flex-wrap:wrap; }
 .set-hint { font-size:11.5px; color:var(--text-weak); line-height:1.6; margin-top:5px; }
 
-/* 个性化：我的消息文字 & 输入框底色 */
+/* 个性化：我发出的气泡（底色 + 字号 + 字色 + 字体） */
 .msg.mine .bubble {
-  font-size:var(--my-font-size, 14px);
-  color:var(--my-text-color, #ffffff);
-  font-family:var(--my-font, inherit);
+  background: var(--bubble-bg, var(--bubble-me));
+  font-size: var(--my-font-size, 14px);
+  color: var(--my-text-color, #ffffff);
+  font-family: var(--my-font, inherit);
 }
-.composer textarea { background:var(--input-bg, #fbfcfe); }
 
 /* 聊天区壁纸 */
 .chat-main { background-size:cover; background-position:center; background-repeat:no-repeat; }
@@ -699,9 +699,10 @@ body {
   color:#fff; font-size:26px; line-height:1;
   display:flex; align-items:center; justify-content:center;
   box-shadow:0 10px 24px rgba(59,124,246,.45);
-  cursor:pointer; user-select:none;
+  cursor:grab; user-select:none; touch-action:none;
   animation:aiFloat 3s ease-in-out infinite;
 }
+.ai-sprite.dragging { animation:none; cursor:grabbing; box-shadow:0 16px 32px rgba(59,124,246,.55); }
 @keyframes aiFloat { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-5px);} }
 .ai-sprite:hover { transform:scale(1.06); }
 

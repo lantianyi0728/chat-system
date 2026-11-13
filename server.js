@@ -330,6 +330,7 @@ const PREF_DEFAULTS = {
   wallpaper_scope: 'me',
   font_size: '14',
   text_color: '#ffffff',
+  bubble_bg: '#3b7cf6',
   input_bg: '#fbfcfe',
   font_family: 'system',
   api_base: '',
@@ -778,7 +779,7 @@ async function handleAPI(req, res, url, pathname) {
   if (pathname === '/api/settings' && req.method === 'PUT') {
     const b = await readJSON(req);
     const allowed = [
-      'wallpaper', 'wallpaper_scope', 'font_size', 'text_color',
+      'wallpaper', 'wallpaper_scope', 'font_size', 'text_color', 'bubble_bg',
       'input_bg', 'font_family', 'api_base', 'api_key', 'api_model',
     ];
     for (const k of allowed) {
