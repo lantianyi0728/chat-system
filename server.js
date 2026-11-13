@@ -163,6 +163,14 @@ db.exec(`
     image_path  TEXT NOT NULL,
     created_at  TEXT NOT NULL
   );
+
+  /* 用户偏好设置：键值对存储（壁纸、字体、AI 接口等） */
+  CREATE TABLE IF NOT EXISTS prefs (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    key     TEXT    NOT NULL,
+    value   TEXT,
+    PRIMARY KEY (user_id, key)
+  );
 `);
 
 /* profiles 表新增 color 列：每个用户注册时随机分配的头像底色 */
@@ -281,6 +289,13 @@ const SQL = {
   deleteSticker: db.prepare(
     `DELETE FROM stickers WHERE id = ? AND user_id = ?`
   ),
+
+  /* 用户偏好（壁纸 / 字体 / AI 接口） */
+  getPrefs: db.prepare(`SELECT key, value FROM prefs WHERE user_id = ?`),
+  setPref: db.prepare(`
+    INSERT INTO prefs (user_id, key, value) VALUES (?, ?, ?)
+    ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value
+  `),
 };
 
 
@@ -307,6 +322,19 @@ const randomColor = () => {
   const free = AVATAR_COLORS.filter((c) => !used.has(c));
   const pool = free.length ? free : AVATAR_COLORS;
   return pool[Math.floor(Math.random() * pool.length)];
+};
+
+/* 用户偏好默认值（聊天壁纸、文字样式、AI 接口配置） */
+const PREF_DEFAULTS = {
+  wallpaper: '',
+  wallpaper_scope: 'me',
+  font_size: '14',
+  text_color: '#ffffff',
+  input_bg: '#fbfcfe',
+  font_family: 'system',
+  api_base: '',
+  api_key: '',
+  api_model: '',
 };
 
 function hashPassword(password, salt) {
@@ -376,13 +404,13 @@ function sendJSON(res, status, data) {
   res.end(body);
 }
 
-// 读取请求体并解析 JSON，限制 12MB（图片/语音的 base64 可能较大）
+// 读取请求体并解析 JSON，限制 45MB（视频的 base64 可能较大）
 function readJSON(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
     req.on('data', (chunk) => {
       raw += chunk;
-      if (raw.length > 12 * 1024 * 1024) {
+      if (raw.length > 45 * 1024 * 1024) {
         reject(new Error('请求体过大'));
         req.destroy();
       }
@@ -398,12 +426,13 @@ function readJSON(req) {
 
 // 把前端传来的 data:image/...;base64,... 解码成文件，落到 public/uploads/<subdir>/
 // 返回可被静态服务直接访问的相对路径，如 /uploads/avatars/ab12cd.png
-function saveImageDataURL(dataURL, subdir) {
+function saveImageDataURL(dataURL, subdir, maxBytes) {
   const m = /^data:image\/(png|jpe?g|gif|webp);base64,(.+)$/i.exec(String(dataURL || '').trim());
   if (!m) throw new Error('只支持 PNG / JPG / GIF / WEBP 图片');
   const ext = m[1].toLowerCase() === 'jpeg' ? 'jpg' : m[1].toLowerCase();
   const buf = Buffer.from(m[2], 'base64');
-  if (buf.length > 2 * 1024 * 1024) throw new Error('图片不能超过 2MB');
+  const limit = maxBytes || 2 * 1024 * 1024;
+  if (buf.length > limit) throw new Error('图片不能超过 ' + Math.round(limit / 1048576) + 'MB');
   // 简单校验文件头，挡掉伪装成图片的脚本
   const okMagic =
     (buf[0] === 0x89 && buf[1] === 0x50) ||   // PNG
@@ -434,6 +463,21 @@ function saveAudioDataURL(dataURL) {
   return '/uploads/audio/' + name;
 }
 
+// 把前端传来的 data:video/...;base64,... 解码落盘，返回 /uploads/videos/xxx.mp4
+function saveVideoDataURL(dataURL) {
+  const m = /^data:video\/(mp4|webm|quicktime|x-m4v|3gpp)[^,]*;base64,(.+)$/i.exec(String(dataURL || '').trim());
+  if (!m) throw new Error('只支持 MP4 / WebM / MOV / M4V / 3GP 视频');
+  const map = { mp4: 'mp4', webm: 'webm', quicktime: 'mov', 'x-m4v': 'm4v', '3gpp': '3gp' };
+  const ext = map[m[1].toLowerCase()] || 'mp4';
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > 25 * 1024 * 1024) throw new Error('视频不能超过 25MB');
+  const dir = path.join(PUBLIC_DIR, 'uploads', 'videos');
+  fs.mkdirSync(dir, { recursive: true });
+  const name = crypto.randomBytes(12).toString('hex') + '.' + ext;
+  fs.writeFileSync(path.join(dir, name), buf);
+  return '/uploads/videos/' + name;
+}
+
 // 从 Authorization: Bearer <token> 中取出登录态
 function currentUser(req) {
   const auth = req.headers.authorization || '';
@@ -454,12 +498,16 @@ const MIME = {
   '.gif': 'image/gif',
   '.webp': 'image/webp',
   '.ico': 'image/x-icon',
-  /* 语音消息用到的音频格式 */
-  '.webm': 'audio/webm',
+  /* 语音 / 视频消息用到的音视频格式 */
+  '.webm': 'video/webm',
   '.ogg': 'audio/ogg',
   '.m4a': 'audio/mp4',
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.m4v': 'video/x-m4v',
+  '.3gp': 'video/3gpp',
 };
 
 
@@ -548,7 +596,13 @@ async function handleAPI(req, res, url, pathname) {
     }
     const rows = SQL.conversation.all(me.id, peerId, peerId, me.id);
     SQL.markRead.run(peerId, me.id);
-    return sendJSON(res, 200, { messages: rows });
+
+    // 对方的聊天壁纸：只有他设置为「双方可见」时才下发
+    const pp = {};
+    SQL.getPrefs.all(peerId).forEach((r) => { pp[r.key] = r.value; });
+    const peerWallpaper = pp.wallpaper_scope === 'both' ? (pp.wallpaper || '') : '';
+
+    return sendJSON(res, 200, { messages: rows, peerWallpaper });
   }
 
   // 发送消息（支持文字 text、图片 image、语音 audio 三种类型）
@@ -558,6 +612,7 @@ async function handleAPI(req, res, url, pathname) {
     let type = 'text';
     if (body.type === 'image') type = 'image';
     else if (body.type === 'audio') type = 'audio';
+    else if (body.type === 'video') type = 'video';
     const text = String(body.content || '').trim();
 
     if (!Number.isInteger(peerId) || !SQL.findUserById.get(peerId)) {
@@ -573,6 +628,11 @@ async function handleAPI(req, res, url, pathname) {
       // 语音消息：同样只允许本服务上传目录里的音频文件
       if (!/^\/uploads\/[a-zA-Z0-9_./-]+\.(webm|ogg|m4a|mp3|wav)$/i.test(text)) {
         return sendJSON(res, 400, { error: '语音地址不合法' });
+      }
+    } else if (type === 'video') {
+      // 视频消息：只允许本服务上传目录里的视频文件
+      if (!/^\/uploads\/[a-zA-Z0-9_./-]+\.(mp4|webm|mov|m4v|3gp)$/i.test(text)) {
+        return sendJSON(res, 400, { error: '视频地址不合法' });
       }
     } else {
       if (!text) return sendJSON(res, 400, { error: '消息不能为空' });
@@ -679,6 +739,106 @@ async function handleAPI(req, res, url, pathname) {
     });
   }
 
+  /* ---------- 6.10 发送照片 ---------- */
+  if (pathname === '/api/photo' && req.method === 'POST') {
+    const b = await readJSON(req);
+    let relPath;
+    try { relPath = saveImageDataURL(b.image, 'photos', 10 * 1024 * 1024); }
+    catch (e) { return sendJSON(res, 400, { error: e.message }); }
+    return sendJSON(res, 200, { photo: relPath });
+  }
+
+  /* ---------- 6.11 发送视频 ---------- */
+  if (pathname === '/api/video' && req.method === 'POST') {
+    const b = await readJSON(req);
+    let relPath;
+    try { relPath = saveVideoDataURL(b.video); }
+    catch (e) { return sendJSON(res, 400, { error: e.message }); }
+    return sendJSON(res, 200, { video: relPath });
+  }
+
+  /* ---------- 6.12 聊天壁纸上传 ---------- */
+  if (pathname === '/api/wallpaper' && req.method === 'POST') {
+    const b = await readJSON(req);
+    let relPath;
+    try { relPath = saveImageDataURL(b.image, 'wallpapers', 10 * 1024 * 1024); }
+    catch (e) { return sendJSON(res, 400, { error: e.message }); }
+    const scope = b.scope === 'both' ? 'both' : 'me';
+    SQL.setPref.run(me.id, 'wallpaper', relPath);
+    SQL.setPref.run(me.id, 'wallpaper_scope', scope);
+    return sendJSON(res, 200, { wallpaper: relPath, scope });
+  }
+
+  /* ---------- 6.13 读取 / 保存个人设置 ---------- */
+  if (pathname === '/api/settings' && req.method === 'GET') {
+    const map = {};
+    SQL.getPrefs.all(me.id).forEach((r) => { map[r.key] = r.value; });
+    return sendJSON(res, 200, { settings: Object.assign({}, PREF_DEFAULTS, map) });
+  }
+  if (pathname === '/api/settings' && req.method === 'PUT') {
+    const b = await readJSON(req);
+    const allowed = [
+      'wallpaper', 'wallpaper_scope', 'font_size', 'text_color',
+      'input_bg', 'font_family', 'api_base', 'api_key', 'api_model',
+    ];
+    for (const k of allowed) {
+      if (b[k] === undefined) continue;
+      SQL.setPref.run(me.id, k, String(b[k]).slice(0, 1000));
+    }
+    return sendJSON(res, 200, { ok: true });
+  }
+
+  /* ---------- 6.14 AI 助手（代理调用国内大模型，OpenAI 兼容格式） ---------- */
+  if (pathname === '/api/ai/chat' && req.method === 'POST') {
+    const b = await readJSON(req);
+    const pf = {};
+    SQL.getPrefs.all(me.id).forEach((r) => { pf[r.key] = r.value; });
+    const base = String(pf.api_base || '').trim();
+    const key = String(pf.api_key || '').trim();
+    const model = String(pf.api_model || '').trim();
+    if (!base || !key || !model) {
+      return sendJSON(res, 400, { error: '请先在设置里填写 API 地址、密钥和模型名' });
+    }
+    const list = Array.isArray(b.messages) ? b.messages.slice(-20) : [];
+    const clean = list
+      .filter((m) => m && ['system', 'user', 'assistant'].includes(m.role) && m.content)
+      .map((m) => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
+    if (!clean.length) return sendJSON(res, 400, { error: '消息不能为空' });
+
+    // 用户填的可以是 https://api.deepseek.com/v1 这种基地址，也可以是完整 URL
+    let apiUrl = base.replace(/\/+$/, '');
+    if (!/\/chat\/completions$/i.test(apiUrl)) apiUrl += '/chat/completions';
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 45000);
+    try {
+      const r = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+        body: JSON.stringify({ model, messages: clean, temperature: 0.7, max_tokens: 800 }),
+        signal: ctrl.signal,
+      });
+      const txt = await r.text();
+      let data = null;
+      try { data = JSON.parse(txt); } catch { data = null; }
+      if (!r.ok) {
+        let msg = 'HTTP ' + r.status;
+        if (data && data.error && data.error.message) msg = data.error.message;
+        else if (data && data.message) msg = data.message;
+        return sendJSON(res, 502, { error: '模型接口错误：' + msg });
+      }
+      const choice = data && data.choices && data.choices[0];
+      const content = choice && choice.message && choice.message.content;
+      if (!content) return sendJSON(res, 502, { error: '模型没有返回内容' });
+      return sendJSON(res, 200, { reply: String(content).trim() });
+    } catch (e) {
+      const msg = e && e.name === 'AbortError' ? '请求超时' : (e && e.message ? e.message : '未知错误');
+      return sendJSON(res, 502, { error: '调用模型失败：' + msg });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   return sendJSON(res, 404, { error: '接口不存在' });
 }
 
@@ -700,8 +860,13 @@ function serveStatic(res, pathname) {
       return res.end('404 页面不存在');
     }
     const ext = path.extname(filePath).toLowerCase();
+    // 语音也常用 .webm：按目录区分成 audio/webm，避免 <audio> 识别成视频
+    let ctype = MIME[ext] || 'application/octet-stream';
+    if (ext === '.webm' && filePath.replace(/\\/g, '/').includes('/uploads/audio/')) {
+      ctype = 'audio/webm';
+    }
     res.writeHead(200, {
-      'Content-Type': MIME[ext] || 'application/octet-stream',
+      'Content-Type': ctype,
       'Cache-Control': 'no-cache',
     });
     res.end(buf);

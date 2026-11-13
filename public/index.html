@@ -52,6 +52,7 @@
           </div>
         </div>
         <div class="head-actions">
+          <button id="settingsBtn2" class="btn-ghost" title="聊天设置 / AI">设置</button>
           <button id="profileBtn" class="btn-ghost" title="个人资料">资料</button>
           <button id="logoutBtn" class="btn-ghost" title="退出登录">退出</button>
         </div>
@@ -78,6 +79,7 @@
             <strong id="peerName">—</strong>
             <span class="peer-hint">局域网直连</span>
           </div>
+          <button id="settingsBtn" class="btn-head-icon" title="聊天设置">⚙️</button>
         </header>
 
         <div id="messageList" class="message-list"></div>
@@ -97,8 +99,15 @@
               <div id="stickerList" class="sticker-list"></div>
             </div>
           </div>
+          <div id="plusMenu" class="plus-menu hidden">
+            <button type="button" id="pickPhotoBtn">🖼️ 照片</button>
+            <button type="button" id="pickVideoBtn">🎬 视频</button>
+          </div>
           <form id="sendForm" class="composer">
+            <button type="button" id="plusBtn" class="btn-plus" title="发送照片 / 视频">＋</button>
             <button type="button" id="emojiBtn" class="btn-emoji" title="表情 / 表情包">😊</button>
+            <input id="photoInput" type="file" accept="image/*" hidden>
+            <input id="videoInput" type="file" accept="video/*" hidden>
             <div class="input-wrap">
               <textarea id="messageInput" rows="1" placeholder="输入消息，Enter 发送 / Shift+Enter 换行"
                         maxlength="1000"></textarea>
@@ -174,6 +183,103 @@
         <button type="button" id="userInfoClose2" class="btn-ghost">关闭</button>
       </div>
     </div>
+  </div>
+
+  <!-- 聊天设置 -->
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-head">
+        <h3>聊天设置</h3>
+        <button id="settingsClose" class="modal-x" title="关闭">×</button>
+      </div>
+
+      <div class="set-section">
+        <div class="set-title">聊天壁纸</div>
+        <div class="wallpaper-row">
+          <div id="wallpaperPreview" class="wallpaper-preview">未设置</div>
+          <div class="wallpaper-ops">
+            <button id="wallpaperUploadBtn" class="btn-soft" type="button">上传壁纸</button>
+            <button id="wallpaperClearBtn" class="btn-ghost" type="button">清除</button>
+            <input id="wallpaperInput" type="file" accept="image/*" hidden>
+          </div>
+        </div>
+        <div class="set-line">
+          <span>可见范围</span>
+          <label class="radio"><input type="radio" name="wpScope" value="me" checked> 仅自己可见</label>
+          <label class="radio"><input type="radio" name="wpScope" value="both"> 双方可见</label>
+        </div>
+      </div>
+
+      <div class="set-section">
+        <div class="set-title">我的文字样式</div>
+        <div class="set-grid">
+          <label class="set-line"><span>字号</span>
+            <input id="setFontSize" type="range" min="12" max="24" step="1" value="14">
+            <b id="fontSizeVal">14px</b>
+          </label>
+          <label class="set-line"><span>文字颜色</span>
+            <input id="setTextColor" type="color" value="#ffffff">
+          </label>
+          <label class="set-line"><span>输入框颜色</span>
+            <input id="setInputBg" type="color" value="#fbfcfe">
+          </label>
+          <label class="set-line"><span>字体</span>
+            <select id="setFontFamily">
+              <option value="system">系统默认</option>
+              <option value="song">宋体</option>
+              <option value="kai">正楷 / 楷体</option>
+              <option value="hei">黑体</option>
+              <option value="yahei">微软雅黑</option>
+              <option value="fangsong">仿宋</option>
+              <option value="xingkai">华文行楷（艺术字）</option>
+              <option value="youyuan">幼圆</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="set-section">
+        <div class="set-title">AI 助手（国内大模型）</div>
+        <label class="field"><span>调用地址 Base URL</span>
+          <input id="setApiBase" type="text" placeholder="例如 https://api.deepseek.com/v1">
+        </label>
+        <label class="field"><span>API Key</span>
+          <input id="setApiKey" type="password" placeholder="sk-...">
+        </label>
+        <label class="field"><span>模型名</span>
+          <input id="setApiModel" type="text" placeholder="例如 deepseek-chat">
+        </label>
+        <p class="set-hint">支持 OpenAI 兼容接口：DeepSeek / Kimi / 智谱 / 通义千问兼容模式 / 百度千帆 v2 等。密钥只保存在你自己的账号下。</p>
+      </div>
+
+      <p id="settingsMsg" class="auth-msg"></p>
+      <div class="modal-actions">
+        <button type="button" id="settingsCancel" class="btn-ghost">取消</button>
+        <button type="button" id="settingsSave" class="btn-primary" style="width:auto;padding:0 22px;">保存设置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI 小精灵：悬浮按钮 + 回复建议 + 迷你聊天窗 -->
+  <div id="aiSprite" class="ai-sprite hidden" title="聊天小精灵">🧚</div>
+  <div id="aiSuggestion" class="ai-suggestion hidden">
+    <div class="ai-sug-label">🧚 小精灵建议</div>
+    <div id="aiSugText" class="ai-sug-text"></div>
+    <div class="ai-sug-actions">
+      <button id="aiSugSend" type="button" class="ai-sug-send">发送</button>
+      <button id="aiSugClose" type="button" class="ai-sug-close">×</button>
+    </div>
+  </div>
+  <div id="aiPanel" class="ai-panel hidden">
+    <div class="ai-head">
+      <span>🧚 聊天小精灵</span>
+      <button id="aiPanelClose" class="modal-x" type="button">×</button>
+    </div>
+    <div id="aiMessages" class="ai-messages"></div>
+    <form id="aiForm" class="ai-form">
+      <input id="aiInput" type="text" placeholder="问点什么…" autocomplete="off">
+      <button type="submit">发送</button>
+    </form>
   </div>
 
   <script src="app.js"></script>

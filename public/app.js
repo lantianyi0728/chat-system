@@ -24,6 +24,32 @@
   var emojiOpen = false;
   var emojiTab = 'emoji';
 
+  /* 设置 / 壁纸 / 文字样式 / AI */
+  var prefs = {
+    wallpaper: '', wallpaper_scope: 'me',
+    font_size: '14', text_color: '#ffffff', input_bg: '#fbfcfe', font_family: 'system',
+    api_base: '', api_key: '', api_model: ''
+  };
+  var peerWallpaper = '';     // 对方「双方可见」的壁纸
+  var recentMsgs = [];        // 最近消息，供 AI 生成回复建议
+  var lastSugForId = 0;
+  var lastSugTime = 0;
+  var suggestBusy = false;
+  var pendingSuggestion = '';
+  var aiHistory = [];         // 小精灵迷你聊天记录
+  var aiBusy = false;
+
+  var FONT_STACKS = {
+    system: '-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif',
+    song: '"SimSun","Songti SC",serif',
+    kai: '"KaiTi","Kaiti SC","STKaiti",serif',
+    hei: '"SimHei","Heiti SC","STHeiti",sans-serif',
+    yahei: '"Microsoft YaHei","PingFang SC",sans-serif',
+    fangsong: '"FangSong","STFangsong",serif',
+    xingkai: '"STXingkai","华文行楷","KaiTi",cursive',
+    youyuan: '"YouYuan","幼圆",sans-serif'
+  };
+
   /* ---------------------------------------------------------------- 元素 */
   var $ = function (id) { return document.getElementById(id); };
 
@@ -90,6 +116,47 @@
   /* 语音消息 */
   var voiceBtn      = $('voiceBtn');
   var recHint       = $('recHint');
+
+  /* 加号：照片 / 视频 */
+  var plusBtn       = $('plusBtn');
+  var plusMenu      = $('plusMenu');
+  var pickPhotoBtn  = $('pickPhotoBtn');
+  var pickVideoBtn  = $('pickVideoBtn');
+  var photoInput    = $('photoInput');
+  var videoInput    = $('videoInput');
+
+  /* 聊天设置 */
+  var settingsBtn   = $('settingsBtn');
+  var settingsBtn2  = $('settingsBtn2');
+  var settingsModal = $('settingsModal');
+  var settingsClose = $('settingsClose');
+  var settingsCancel= $('settingsCancel');
+  var settingsSave  = $('settingsSave');
+  var settingsMsg   = $('settingsMsg');
+  var wallpaperPreview = $('wallpaperPreview');
+  var wallpaperUploadBtn = $('wallpaperUploadBtn');
+  var wallpaperClearBtn  = $('wallpaperClearBtn');
+  var wallpaperInput= $('wallpaperInput');
+  var setFontSize   = $('setFontSize');
+  var fontSizeVal   = $('fontSizeVal');
+  var setTextColor  = $('setTextColor');
+  var setInputBg    = $('setInputBg');
+  var setFontFamily = $('setFontFamily');
+  var setApiBase    = $('setApiBase');
+  var setApiKey     = $('setApiKey');
+  var setApiModel   = $('setApiModel');
+
+  /* AI 小精灵 */
+  var aiSprite      = $('aiSprite');
+  var aiSuggestion  = $('aiSuggestion');
+  var aiSugText     = $('aiSugText');
+  var aiSugSend     = $('aiSugSend');
+  var aiSugClose    = $('aiSugClose');
+  var aiPanel       = $('aiPanel');
+  var aiPanelClose  = $('aiPanelClose');
+  var aiMessages    = $('aiMessages');
+  var aiForm        = $('aiForm');
+  var aiInput       = $('aiInput');
 
   /* ================================================================
      一、通用请求封装
@@ -205,6 +272,17 @@
     userListEl.innerHTML = '';
     conversation.classList.add('hidden');
     emptyState.classList.remove('hidden');
+
+    // 退出时把小精灵、建议、壁纸一起收走，别带到下一个人身上
+    if (aiSprite) aiSprite.classList.add('hidden');
+    if (aiPanel) aiPanel.classList.add('hidden');
+    hideSuggestion();
+    prefs.wallpaper = '';
+    peerWallpaper = '';
+    recentMsgs = [];
+    lastSugForId = 0;
+    aiHistory = [];
+    applyWallpaper();
   }
 
   /* ================================================================
@@ -220,6 +298,8 @@
 
     buildEmojiGrid();
     refreshUsers();
+    loadSettings();                       // 壁纸 / 文字样式 / AI 配置
+    if (aiSprite) aiSprite.classList.remove('hidden');
 
     // 轮询：每 2.5 秒同步一次列表和当前对话（局域网内几乎无延迟感）
     if (pollTimer) clearInterval(pollTimer);
@@ -302,6 +382,13 @@
     lastRenderDay = '';     // 换人时必须重置，否则"今天"这条分隔线会被跳过
     messageList.innerHTML = '';
 
+    // 换人：把上一个人的建议、壁纸、上下文全部清掉
+    hideSuggestion();
+    peerWallpaper = '';
+    recentMsgs = [];
+    lastSugForId = 0;
+    applyWallpaper();
+
     emptyState.classList.add('hidden');
     conversation.classList.remove('hidden');
     chatView.classList.add('conv-open');   // 手机上收起左侧列表
@@ -320,6 +407,15 @@
 
     api('/api/messages?peerId=' + peer.id).then(function (data) {
       var list = data.messages || [];
+
+      // 对方的「双方可见」壁纸：变了才重新上墙，避免每 2.5 秒刷一次背景
+      var pw = data.peerWallpaper || '';
+      if (pw !== peerWallpaper) {
+        peerWallpaper = pw;
+        applyWallpaper();
+      }
+
+      recentMsgs = list.slice(-8);   // 留给 AI 生成回复建议
 
       // 只在有新消息时追加，避免整体重绘导致滚动位置跳动
       var fresh = list.filter(function (m) { return m.id > lastMsgId; });
@@ -342,6 +438,10 @@
       lastRenderDay = lastDay;
 
       if (nearBottom) scrollToBottom();
+
+      // 对方刚发来消息 → 让小精灵偷偷想一句回复
+      var lastOne = fresh[fresh.length - 1];
+      if (me && lastOne && lastOne.sender_id !== me.id) maybeSuggest();
     }).catch(function () { /* 静默 */ });
   }
 
@@ -406,19 +506,25 @@
     scrollToBottom();
   }
 
-  // 直接发送一张图片表情（type=image）
-  function sendSticker(path) {
-    if (!peer || busy) return;
+  // 发送任意类型的媒体消息（图片表情 / 语音 / 照片 / 视频）
+  function sendMedia(path, type) {
+    if (!peer) { alert('请先选择一个聊天对象'); return; }
+    if (busy) return;
     busy = true;
     api('/api/messages', {
       method: 'POST',
-      body: { toUserId: peer.id, content: path, type: 'image' }
+      body: { toUserId: peer.id, content: path, type: type }
     }).then(function (data) {
       appendMessage(data.message);
       refreshUsers();
     }).catch(function (err) {
       alert('发送失败：' + err.message);
     }).finally(function () { busy = false; });
+  }
+
+  // 直接发送一张图片表情（type=image）
+  function sendSticker(path) {
+    sendMedia(path, 'image');
   }
 
   /* ================================================================
@@ -431,6 +537,9 @@
       body = '<div class="bubble bubble-img"><img src="' + escapeHTML(m.content) + '" alt="图片"></div>';
     } else if (m.type === 'audio') {
       body = '<div class="bubble bubble-audio"><audio controls preload="metadata" src="' + escapeHTML(m.content) + '"></audio></div>';
+    } else if (m.type === 'video') {
+      body = '<div class="bubble bubble-video"><video controls preload="metadata" playsinline src="' +
+             escapeHTML(m.content) + '"></video></div>';
     } else {
       body = '<div class="bubble">' + escapeHTML(m.content) + '</div>';
     }
@@ -741,22 +850,324 @@
   }
 
   function sendVoice(path) {
-    if (!peer) { alert('请先选择一个聊天对象'); return; }
-    if (busy) return;
-    busy = true;
-    api('/api/messages', {
-      method: 'POST',
-      body: { toUserId: peer.id, content: path, type: 'audio' }
-    }).then(function (data) {
-      appendMessage(data.message);
-      refreshUsers();
-    }).catch(function (err) {
-      alert('发送失败：' + err.message);
-    }).finally(function () { busy = false; });
+    sendMedia(path, 'audio');
   }
 
   /* ================================================================
-     十四、事件绑定
+     十四、加号菜单：发照片 / 发视频
+     ================================================================ */
+  var pendingScope = 'me';    // 壁纸可见范围，radio 的当前值
+
+  function togglePlusMenu() {
+    var willOpen = plusMenu.classList.contains('hidden');
+    plusMenu.classList.toggle('hidden', !willOpen);
+    if (willOpen) closeEmojiPanel();     // 两个气泡菜单不共存
+  }
+  function closePlusMenu() {
+    plusMenu.classList.add('hidden');
+  }
+
+  function sendPhotoFile(file) {
+    if (!file) return;
+    if (!peer) { alert('请先选择一个聊天对象'); return; }
+    if (!/^image\//.test(file.type)) { alert('请选择图片文件'); return; }
+    if (file.size > 10 * 1024 * 1024) { alert('图片超过 10MB，请换一张小一点的'); return; }
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      api('/api/photo', { method: 'POST', body: { image: reader.result } })
+        .then(function (data) { sendMedia(data.photo, 'image'); })
+        .catch(function (err) { alert('照片发送失败：' + err.message); });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function sendVideoFile(file) {
+    if (!file) return;
+    if (!peer) { alert('请先选择一个聊天对象'); return; }
+    if (!/^video\//.test(file.type)) { alert('请选择视频文件'); return; }
+    if (file.size > 25 * 1024 * 1024) {
+      alert('视频超过 25MB，浏览器上传会比较吃力，请压缩或截短一点再发');
+      return;
+    }
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      api('/api/video', { method: 'POST', body: { video: reader.result } })
+        .then(function (data) { sendMedia(data.video, 'video'); })
+        .catch(function (err) { alert('视频发送失败：' + err.message); });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /* ================================================================
+     十五、聊天设置：壁纸 / 文字样式 / AI 接口
+     ================================================================ */
+  function applyTheme() {
+    var root = document.documentElement;
+    root.style.setProperty('--my-font-size', (prefs.font_size || '14') + 'px');
+    root.style.setProperty('--my-text-color', prefs.text_color || '#ffffff');
+    root.style.setProperty('--input-bg', prefs.input_bg || '#fbfcfe');
+    root.style.setProperty('--my-font', FONT_STACKS[prefs.font_family] || FONT_STACKS.system);
+  }
+
+  // 上壁纸：优先用自己设的；自己没设、而对方开了「双方可见」就用对方的
+  function applyWallpaper() {
+    var main = document.querySelector('.chat-main');
+    if (!main) return;
+    var url = prefs.wallpaper || peerWallpaper || '';
+    if (url) {
+      main.style.backgroundImage = 'url("' + url + '")';
+      main.classList.add('has-wallpaper');
+    } else {
+      main.style.backgroundImage = '';
+      main.classList.remove('has-wallpaper');
+    }
+  }
+
+  function loadSettings() {
+    api('/api/settings').then(function (data) {
+      prefs = Object.assign({}, prefs, data.settings || {});
+      applyTheme();
+      applyWallpaper();
+    }).catch(function () { /* 静默 */ });
+  }
+
+  function renderWallpaperPreview() {
+    if (!wallpaperPreview) return;
+    if (prefs.wallpaper) {
+      wallpaperPreview.style.backgroundImage = 'url("' + prefs.wallpaper + '")';
+      wallpaperPreview.textContent = '';
+    } else {
+      wallpaperPreview.style.backgroundImage = '';
+      wallpaperPreview.textContent = '未设置';
+    }
+  }
+
+  function setScopeRadio(v) {
+    document.querySelectorAll('input[name="wpScope"]').forEach(function (r) {
+      r.checked = (r.value === v);
+    });
+  }
+
+  function openSettings() {
+    api('/api/settings').then(function (data) {
+      prefs = Object.assign({}, prefs, data.settings || {});
+      applyTheme();
+      applyWallpaper();
+
+      pendingScope = prefs.wallpaper_scope === 'both' ? 'both' : 'me';
+      setScopeRadio(pendingScope);
+      renderWallpaperPreview();
+
+      setFontSize.value = prefs.font_size || '14';
+      fontSizeVal.textContent = (prefs.font_size || '14') + 'px';
+      setTextColor.value = prefs.text_color || '#ffffff';
+      setInputBg.value = prefs.input_bg || '#fbfcfe';
+      setFontFamily.value = prefs.font_family || 'system';
+      setApiBase.value = prefs.api_base || '';
+      setApiKey.value = prefs.api_key || '';
+      setApiModel.value = prefs.api_model || '';
+
+      settingsMsg.textContent = '';
+      settingsModal.classList.remove('hidden');
+    }).catch(function (err) { alert(err.message); });
+  }
+
+  function saveSettings() {
+    if (busy) return;
+    busy = true;
+    settingsMsg.textContent = '保存中…';
+
+    var body = {
+      font_size: String(setFontSize.value),
+      text_color: setTextColor.value,
+      input_bg: setInputBg.value,
+      font_family: setFontFamily.value,
+      api_base: setApiBase.value.trim().replace(/\/+$/, ''),
+      api_key: setApiKey.value.trim(),
+      api_model: setApiModel.value.trim(),
+      wallpaper_scope: pendingScope
+    };
+
+    api('/api/settings', { method: 'PUT', body: body }).then(function () {
+      prefs = Object.assign({}, prefs, body);
+      applyTheme();
+      applyWallpaper();
+      settingsModal.classList.add('hidden');
+      if (prefs.api_base && prefs.api_key && prefs.api_model) {
+        appendAiMsg('API 配好啦，我在右下角待命，随时喊我 🧚', 'tip');
+      }
+    }).catch(function (err) {
+      settingsMsg.textContent = err.message;
+    }).finally(function () { busy = false; });
+  }
+
+  function uploadWallpaper(file) {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { alert('请选择图片文件'); return; }
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      settingsMsg.textContent = '壁纸上传中…';
+      api('/api/wallpaper', {
+        method: 'POST',
+        body: { image: reader.result, scope: pendingScope }
+      }).then(function (data) {
+        prefs.wallpaper = data.wallpaper;
+        prefs.wallpaper_scope = data.scope;
+        renderWallpaperPreview();
+        applyWallpaper();
+        settingsMsg.textContent = data.scope === 'both'
+          ? '壁纸已生效：双方都能看到'
+          : '壁纸已生效：仅自己可见';
+      }).catch(function (err) {
+        settingsMsg.textContent = err.message;
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearWallpaper() {
+    api('/api/settings', { method: 'PUT', body: { wallpaper: '' } }).then(function () {
+      prefs.wallpaper = '';
+      renderWallpaperPreview();
+      applyWallpaper();
+      settingsMsg.textContent = '壁纸已清除';
+    }).catch(function (err) { settingsMsg.textContent = err.message; });
+  }
+
+  /* ================================================================
+     十六、AI 小精灵：主动建议 + 迷你聊天窗
+     ================================================================ */
+  var SUG_MIN_GAP = 8000;    // 两条建议之间至少隔 8 秒，别刷屏
+
+  function hasAI() {
+    return !!(prefs.api_base && prefs.api_key && prefs.api_model);
+  }
+
+  function callAI(messages) {
+    return api('/api/ai/chat', { method: 'POST', body: { messages: messages } })
+      .then(function (data) { return data.reply; });
+  }
+
+  function appendAiMsg(text, role) {
+    var div = document.createElement('div');
+    div.className = 'ai-msg ' + role;
+    div.textContent = text;
+    aiMessages.appendChild(div);
+    aiMessages.scrollTop = aiMessages.scrollHeight;
+    return div;
+  }
+
+  function openAiPanel() {
+    aiPanel.classList.remove('hidden');
+    hideSuggestion();
+    if (!aiMessages.dataset.inited) {
+      aiMessages.dataset.inited = '1';
+      appendAiMsg('我是聊天小精灵 🧚 配好 API 后，我可以帮你出一句回复，也能陪你聊天。', 'tip');
+    }
+    setTimeout(function () { aiInput.focus(); }, 30);
+  }
+  function closeAiPanel() { aiPanel.classList.add('hidden'); }
+  function toggleAiPanel() {
+    if (aiPanel.classList.contains('hidden')) openAiPanel();
+    else closeAiPanel();
+  }
+
+  function askSprite(text) {
+    if (aiBusy) return;
+
+    if (!hasAI()) {
+      appendAiMsg('还没有配置大模型接口：点右上角 ⚙️ 设置，填好调用地址、API Key 和模型名，我就能开工啦。', 'tip');
+      return;
+    }
+
+    aiBusy = true;
+    appendAiMsg(text, 'user');
+    aiHistory.push({ role: 'user', content: text });
+
+    var thinking = appendAiMsg('思考中…', 'tip');
+    var msgs = [{
+      role: 'system',
+      content: '你是"聊天小精灵"，一个活泼、简短、贴心的中文助手。回答控制在 120 字以内，口语化，别用 Markdown。'
+    }].concat(aiHistory.slice(-10));
+
+    callAI(msgs).then(function (reply) {
+      thinking.remove();
+      appendAiMsg(reply, 'assistant');
+      aiHistory.push({ role: 'assistant', content: reply });
+    }).catch(function (err) {
+      thinking.textContent = '出错了：' + err.message;
+    }).finally(function () { aiBusy = false; });
+  }
+
+  function showSuggestion(text) {
+    pendingSuggestion = text;
+    aiSugText.textContent = text;
+    aiSuggestion.classList.remove('hidden');
+  }
+  function hideSuggestion() {
+    pendingSuggestion = '';
+    if (aiSuggestion) aiSuggestion.classList.add('hidden');
+  }
+
+  // 点「发送」直接把建议发出去
+  function sendSuggestion() {
+    var text = pendingSuggestion;
+    if (!text) return;
+    hideSuggestion();
+    if (!peer) { alert('请先选择一个聊天对象'); return; }
+    messageInput.value = text;
+    messageInput.dispatchEvent(new Event('input'));
+    send();
+  }
+
+  // 对方发来消息后，偷偷让 AI 想一句回复，弹个小气泡
+  function maybeSuggest() {
+    if (!peer || suggestBusy || !hasAI()) return;
+    if (!aiPanel.classList.contains('hidden')) return;   // 正在和小精灵聊天，别抢注意力
+    if (!recentMsgs.length) return;
+
+    var lastOne = recentMsgs[recentMsgs.length - 1];
+    if (!lastOne || (me && lastOne.sender_id === me.id)) return;
+    if (lastOne.id === lastSugForId) return;             // 同一条消息只想一次
+    if (Date.now() - lastSugTime < SUG_MIN_GAP) return;   // 节流
+
+    suggestBusy = true;
+    lastSugForId = lastOne.id;
+
+    var peerName = peer.display_name || peer.username;
+    var lines = recentMsgs.slice(-6).map(function (m) {
+      var who = (me && m.sender_id === me.id) ? '我' : peerName;
+      var body;
+      if (m.type === 'image') body = '[图片]';
+      else if (m.type === 'audio') body = '[语音]';
+      else if (m.type === 'video') body = '[视频]';
+      else body = m.content;
+      return who + '：' + body;
+    }).join('\n');
+
+    callAI([
+      { role: 'system', content: '你是聊天助手。根据聊天记录，替"我"想一句回复对方的话。只输出这句话本身：不要引号、不要解释、不超过 25 个字，口语自然。' },
+      { role: 'user', content: '聊天记录：\n' + lines }
+    ]).then(function (reply) {
+      var t = String(reply)
+        .replace(/^[\s"'“”‘’「」《》]+/, '')
+        .replace(/[\s"'“”‘’「」《》]+$/, '')
+        .replace(/\n+/g, ' ')
+        .slice(0, 60);
+      if (t) showSuggestion(t);
+    }).catch(function () {
+      /* AI 出错就当没这回事，绝不打扰正常聊天 */
+    }).finally(function () {
+      suggestBusy = false;
+      lastSugTime = Date.now();
+    });
+  }
+
+  /* ================================================================
+     十七、事件绑定
      ================================================================ */
   if (profileBtn) profileBtn.addEventListener('click', openProfile);
   if (meBox) meBox.addEventListener('click', openProfile);
@@ -793,5 +1204,76 @@
 
   /* 语音 */
   if (voiceBtn) voiceBtn.addEventListener('click', toggleRecording);
+
+  /* 加号：照片 / 视频 */
+  if (plusBtn) plusBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    togglePlusMenu();
+  });
+  if (pickPhotoBtn) pickPhotoBtn.addEventListener('click', function () {
+    closePlusMenu();
+    photoInput.click();
+  });
+  if (pickVideoBtn) pickVideoBtn.addEventListener('click', function () {
+    closePlusMenu();
+    videoInput.click();
+  });
+  if (photoInput) photoInput.addEventListener('change', function () {
+    sendPhotoFile(photoInput.files[0]);
+    photoInput.value = '';
+  });
+  if (videoInput) videoInput.addEventListener('change', function () {
+    sendVideoFile(videoInput.files[0]);
+    videoInput.value = '';
+  });
+  // 点别处收起加号菜单
+  document.addEventListener('click', function (e) {
+    if (plusMenu.classList.contains('hidden')) return;
+    if (plusMenu.contains(e.target) || plusBtn.contains(e.target)) return;
+    closePlusMenu();
+  });
+
+  /* 聊天设置 */
+  if (settingsBtn) settingsBtn.addEventListener('click', openSettings);
+  if (settingsBtn2) settingsBtn2.addEventListener('click', openSettings);
+  if (settingsClose) settingsClose.addEventListener('click', function () {
+    settingsModal.classList.add('hidden');
+  });
+  if (settingsCancel) settingsCancel.addEventListener('click', function () {
+    settingsModal.classList.add('hidden');
+  });
+  if (settingsSave) settingsSave.addEventListener('click', saveSettings);
+  if (wallpaperUploadBtn) wallpaperUploadBtn.addEventListener('click', function () {
+    wallpaperInput.click();
+  });
+  if (wallpaperInput) wallpaperInput.addEventListener('change', function () {
+    uploadWallpaper(wallpaperInput.files[0]);
+    wallpaperInput.value = '';
+  });
+  if (wallpaperClearBtn) wallpaperClearBtn.addEventListener('click', clearWallpaper);
+  if (setFontSize) setFontSize.addEventListener('input', function () {
+    fontSizeVal.textContent = setFontSize.value + 'px';
+  });
+  document.querySelectorAll('input[name="wpScope"]').forEach(function (r) {
+    r.addEventListener('change', function () { pendingScope = r.value; });
+  });
+  // 选字体时立刻预览效果
+  if (setFontFamily) setFontFamily.addEventListener('change', function () {
+    document.documentElement.style.setProperty(
+      '--my-font', FONT_STACKS[setFontFamily.value] || FONT_STACKS.system);
+  });
+
+  /* AI 小精灵 */
+  if (aiSprite) aiSprite.addEventListener('click', toggleAiPanel);
+  if (aiPanelClose) aiPanelClose.addEventListener('click', closeAiPanel);
+  if (aiSugSend) aiSugSend.addEventListener('click', sendSuggestion);
+  if (aiSugClose) aiSugClose.addEventListener('click', hideSuggestion);
+  if (aiForm) aiForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var t = aiInput.value.trim();
+    if (!t) return;
+    aiInput.value = '';
+    askSprite(t);
+  });
 
 })();
