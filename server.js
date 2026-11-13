@@ -152,6 +152,7 @@ db.exec(`
     birthday     TEXT,
     school       TEXT,
     address      TEXT,
+    bio          TEXT,
     avatar       TEXT,
     color        TEXT
   );
@@ -173,11 +174,15 @@ db.exec(`
   );
 `);
 
-/* profiles 表新增 color 列：每个用户注册时随机分配的头像底色 */
+/* profiles 表的增量迁移：
+   color = 注册时随机分配的头像底色；bio = 个人简介 */
 (function migrateProfiles() {
   const cols = db.prepare('PRAGMA table_info(profiles)').all();
   if (!cols.some((c) => c.name === 'color')) {
     db.exec('ALTER TABLE profiles ADD COLUMN color TEXT');
+  }
+  if (!cols.some((c) => c.name === 'bio')) {
+    db.exec('ALTER TABLE profiles ADD COLUMN bio TEXT');
   }
 })();
 
@@ -260,16 +265,17 @@ const SQL = {
 
   /* 个人资料 */
   getProfile: db.prepare(
-    `SELECT display_name, birthday, school, address, avatar, color FROM profiles WHERE user_id = ?`
+    `SELECT display_name, birthday, school, address, bio, avatar, color FROM profiles WHERE user_id = ?`
   ),
   upsertProfile: db.prepare(`
-    INSERT INTO profiles (user_id, display_name, birthday, school, address, avatar)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO profiles (user_id, display_name, birthday, school, address, bio, avatar)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id) DO UPDATE SET
       display_name = excluded.display_name,
       birthday     = excluded.birthday,
       school       = excluded.school,
       address      = excluded.address,
+      bio          = excluded.bio,
       avatar       = excluded.avatar
   `),
   ensureProfile: db.prepare(`INSERT OR IGNORE INTO profiles (user_id) VALUES (?)`),
@@ -574,6 +580,7 @@ async function handleAPI(req, res, url, pathname) {
         birthday: p.birthday || '',
         school: p.school || '',
         address: p.address || '',
+        bio: p.bio || '',
         avatar: p.avatar || '',
         color: p.color || '',
       },
@@ -661,8 +668,9 @@ async function handleAPI(req, res, url, pathname) {
     const birthday = String(b.birthday ?? cur.birthday ?? '').slice(0, 20) || null;
     const school = String(b.school ?? cur.school ?? '').slice(0, 50) || null;
     const address = String(b.address ?? cur.address ?? '').slice(0, 100) || null;
+    const bio = String(b.bio ?? cur.bio ?? '').slice(0, 200) || null;
     const avatar = cur.avatar || '';
-    SQL.upsertProfile.run(me.id, display_name, birthday, school, address, avatar);
+    SQL.upsertProfile.run(me.id, display_name, birthday, school, address, bio, avatar);
     return sendJSON(res, 200, { ok: true });
   }
 
@@ -733,6 +741,7 @@ async function handleAPI(req, res, url, pathname) {
         birthday: p.birthday || '',
         school: p.school || '',
         address: p.address || '',
+        bio: p.bio || '',
         avatar: p.avatar || '',
         color: p.color || '',
         created_at: u.created_at,

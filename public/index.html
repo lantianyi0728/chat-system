@@ -150,6 +150,11 @@
           <span>地址</span>
           <input id="pfAddress" type="text" maxlength="100" placeholder="所在地址">
         </label>
+        <label class="field">
+          <span>个人简介</span>
+          <textarea id="pfBio" maxlength="200" placeholder="介绍一下自己吧，比如爱好、最近在做什么…"></textarea>
+          <small id="bioCount" class="field-count">0 / 200</small>
+        </label>
         <p id="profileMsg" class="auth-msg"></p>
         <div class="modal-actions">
           <button type="button" id="profileCancel" class="btn-ghost">取消</button>
@@ -173,6 +178,7 @@
           <span id="uiUsername" class="ui-sub">@—</span>
         </div>
       </div>
+      <div id="uiBio" class="ui-bio empty">还没有写个人简介</div>
       <div class="info-list">
         <div class="info-row"><span>生日</span><b id="uiBirthday">未填写</b></div>
         <div class="info-row"><span>学校</span><b id="uiSchool">未填写</b></div>

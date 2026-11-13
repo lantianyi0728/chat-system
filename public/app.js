@@ -19,7 +19,7 @@
   var authMode = 'login';     // 'login' | 'register'
   var pollTimer = null;       // 轮询定时器
   var busy = false;           // 防重复提交
-  var myProfile = { display_name:'', birthday:'', school:'', address:'', avatar:'' };
+  var myProfile = { display_name:'', birthday:'', school:'', address:'', bio:'', avatar:'' };
   var stickers = [];          // 我的表情包
   var emojiOpen = false;
   var emojiTab = 'emoji';
@@ -91,6 +91,8 @@
   var pfBirthday    = $('pfBirthday');
   var pfSchool      = $('pfSchool');
   var pfAddress     = $('pfAddress');
+  var pfBio         = $('pfBio');
+  var bioCount      = $('bioCount');
 
   /* 表情 / 表情包面板相关 */
   var emojiBtn      = $('emojiBtn');
@@ -111,6 +113,7 @@
   var uiBirthday    = $('uiBirthday');
   var uiSchool      = $('uiSchool');
   var uiAddress     = $('uiAddress');
+  var uiBio         = $('uiBio');
   var uiCreated     = $('uiCreated');
 
   /* 语音消息 */
@@ -292,7 +295,7 @@
     authView.classList.add('hidden');
     chatView.classList.remove('hidden');
 
-    var initial = (me.username || '?').slice(0, 1).toUpperCase();
+    var initial = (myProfile.display_name || me.username || '?').slice(0, 1).toUpperCase();
     myName.textContent = myProfile.display_name || me.username;
     setAvatarEl(myAvatar, myProfile.avatar, initial, myProfile.color);
 
@@ -331,7 +334,7 @@
 
     userListEl.innerHTML = users.map(function (u) {
       var isActive = peer && peer.id === u.id;
-      var initial = u.username.slice(0, 1).toUpperCase();
+      var initial = (u.display_name || u.username).slice(0, 1).toUpperCase();
       var name = u.display_name || u.username;
       var preview;
       if (u.last_type === 'image') preview = '[图片]';
@@ -393,7 +396,7 @@
     conversation.classList.remove('hidden');
     chatView.classList.add('conv-open');   // 手机上收起左侧列表
 
-    var initial = user.username.slice(0, 1).toUpperCase();
+    var initial = (user.display_name || user.username).slice(0, 1).toUpperCase();
     peerName.textContent = user.display_name || user.username;
     setAvatarEl(peerAvatar, user.avatar, initial, user.color);
 
@@ -627,12 +630,18 @@
       pfBirthday.value = p.birthday || '';
       pfSchool.value = p.school || '';
       pfAddress.value = p.address || '';
-      setAvatarEl(profileAvatar, p.avatar, (me.username || '?').slice(0, 1).toUpperCase(), p.color);
+      pfBio.value = p.bio || '';
+      updateBioCount();
+      setAvatarEl(profileAvatar, p.avatar, (p.display_name || me.username || '?').slice(0, 1).toUpperCase(), p.color);
       profileMsg.textContent = '';
       profileModal.classList.remove('hidden');
     }).catch(function (err) { alert(err.message); });
   }
   function closeProfile() { profileModal.classList.add('hidden'); }
+
+  function updateBioCount() {
+    if (bioCount && pfBio) bioCount.textContent = pfBio.value.length + ' / 200';
+  }
 
   function saveProfile() {
     if (busy) return; busy = true;
@@ -642,14 +651,18 @@
         display_name: pfName.value.trim(),
         birthday: pfBirthday.value,
         school: pfSchool.value.trim(),
-        address: pfAddress.value.trim()
+        address: pfAddress.value.trim(),
+        bio: pfBio.value.trim()
       }
     }).then(function () {
       myProfile.display_name = pfName.value.trim();
       myProfile.birthday = pfBirthday.value;
       myProfile.school = pfSchool.value.trim();
       myProfile.address = pfAddress.value.trim();
+      myProfile.bio = pfBio.value.trim();
       myName.textContent = myProfile.display_name || me.username;
+      setAvatarEl(myAvatar, myProfile.avatar,
+        (myProfile.display_name || me.username || '?').slice(0, 1).toUpperCase(), myProfile.color);
       closeProfile();
       refreshUsers();
     }).catch(function (err) { profileMsg.textContent = err.message; })
@@ -664,7 +677,7 @@
       api('/api/avatar', { method: 'POST', body: { image: reader.result } })
         .then(function (data) {
           myProfile.avatar = data.avatar;
-          var init = (me.username || '?').slice(0, 1).toUpperCase();
+          var init = (myProfile.display_name || me.username || '?').slice(0, 1).toUpperCase();
           setAvatarEl(myAvatar, data.avatar, init, myProfile.color);
           setAvatarEl(profileAvatar, data.avatar, init, myProfile.color);
         }).catch(function (err) { alert('头像上传失败：' + err.message); });
@@ -765,13 +778,20 @@
   function openUserInfo(u) {
     api('/api/users/' + u.id + '/profile').then(function (data) {
       var p = data.profile || {};
-      var initial = (p.username || '?').slice(0, 1).toUpperCase();
+      var initial = (p.display_name || p.username || '?').slice(0, 1).toUpperCase();
       setAvatarEl(uiAvatar, p.avatar, initial, p.color);
       uiName.textContent = p.display_name || p.username;
       uiUsername.textContent = '@' + p.username;
       uiBirthday.textContent = p.birthday || '未填写';
       uiSchool.textContent = p.school || '未填写';
       uiAddress.textContent = p.address || '未填写';
+      if (p.bio) {
+        uiBio.textContent = p.bio;
+        uiBio.classList.remove('empty');
+      } else {
+        uiBio.textContent = '还没有写个人简介';
+        uiBio.classList.add('empty');
+      }
       uiCreated.textContent = p.created_at ? new Date(p.created_at).toLocaleDateString() : '—';
       userInfoModal.classList.remove('hidden');
     }).catch(function (err) { alert(err.message); });
@@ -1315,6 +1335,7 @@
   if (avatarInput) avatarInput.addEventListener('change', function () {
     uploadAvatar(avatarInput.files[0]); avatarInput.value = '';
   });
+  if (pfBio) pfBio.addEventListener('input', updateBioCount);
 
   if (emojiBtn) emojiBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleEmojiPanel(); });
   if (stickerAddBtn) stickerAddBtn.addEventListener('click', function () { stickerInput.click(); });

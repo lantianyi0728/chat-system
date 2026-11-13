@@ -138,6 +138,29 @@ body {
   box-shadow: 0 0 0 3px var(--brand-soft);
 }
 
+/* 个人简介：多行输入框 */
+.field textarea {
+  width: 100%;
+  min-height: 74px;
+  padding: 10px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fbfcfe;
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.6;
+  color: var(--text);
+  outline: none;
+  resize: vertical;
+  transition: border-color .18s, box-shadow .18s;
+}
+.field textarea:focus {
+  border-color: var(--brand);
+  background: #fff;
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+.field-count { display:block; text-align:right; font-size:11.5px; color:var(--text-weak); margin-top:4px; }
+
 .auth-msg {
   min-height: 18px;
   font-size: 12.5px;
@@ -525,6 +548,7 @@ body {
   width:100%; max-width:420px; background:var(--panel);
   border:1px solid var(--border); border-radius:18px;
   padding:24px 22px; box-shadow:var(--shadow);
+  max-height:88vh; overflow-y:auto;
 }
 .modal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
 .modal-head h3 { font-size:17px; font-weight:700; }
@@ -613,6 +637,15 @@ body {
 .info-row:last-child { border-bottom:none; }
 .info-row span { color:var(--text-weak); flex:0 0 auto; }
 .info-row b { font-weight:600; text-align:right; word-break:break-all; }
+
+/* 他人资料里的个人简介 */
+.ui-bio {
+  background:#f6f8fb; border:1px solid var(--border); border-radius:12px;
+  padding:10px 13px; margin:2px 0 12px;
+  font-size:13px; line-height:1.65; color:var(--text);
+  white-space:pre-wrap; word-break:break-word; max-height:132px; overflow-y:auto;
+}
+.ui-bio.empty { color:var(--text-weak); font-style:normal; }
 #peerAvatar { cursor:pointer; }
 
 /* ---------------------------------------------------------------- 加号：照片 / 视频 */
@@ -670,7 +703,7 @@ body {
 .wallpaper-preview {
   width:128px; height:72px; flex:0 0 128px;
   border:1px dashed var(--border); border-radius:10px;
-  background:#f6f8fb center/cover no-repeat;
+  background:#f6f8fb center/contain no-repeat;
   display:flex; align-items:center; justify-content:center;
   font-size:12px; color:var(--text-weak); overflow:hidden;
 }
@@ -686,9 +719,14 @@ body {
 }
 
 /* 聊天区壁纸 */
-.chat-main { background-size:cover; background-position:center; background-repeat:no-repeat; }
+/* 聊天区壁纸：完整显示（contain），不裁切画面 */
+.chat-main {
+  background-size: contain;
+  background-position: center center;
+  background-repeat: no-repeat;
+}
 .chat-main.has-wallpaper .empty-state,
-.chat-main.has-wallpaper .message-list { text-shadow:0 1px 2px rgba(0,0,0,.25); }
+.chat-main.has-wallpaper .message-list { text-shadow: 0 1px 3px rgba(0,0,0,.45); }
 
 /* ---------------------------------------------------------------- AI 小精灵 */
 /* 注意：要浮在输入框上方，否则会压住「发送」按钮 */
