@@ -99,8 +99,12 @@
           </div>
           <form id="sendForm" class="composer">
             <button type="button" id="emojiBtn" class="btn-emoji" title="表情 / 表情包">😊</button>
-            <textarea id="messageInput" rows="1" placeholder="输入消息，Enter 发送 / Shift+Enter 换行"
-                      maxlength="1000"></textarea>
+            <div class="input-wrap">
+              <textarea id="messageInput" rows="1" placeholder="输入消息，Enter 发送 / Shift+Enter 换行"
+                        maxlength="1000"></textarea>
+              <button type="button" id="voiceBtn" class="btn-voice" title="点击开始录音">🎤</button>
+              <span id="recHint" class="rec-hint hidden">录音中… 0:00</span>
+            </div>
             <button id="sendBtn" class="btn-send" type="submit">发送</button>
           </form>
         </div>
@@ -143,6 +147,32 @@
           <button type="submit" class="btn-primary" style="width:auto;padding:0 22px;">保存</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- 查看他人资料 -->
+  <div id="userInfoModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>用户资料</h3>
+        <button id="userInfoClose" class="modal-x" title="关闭">×</button>
+      </div>
+      <div class="profile-avatar-row">
+        <div id="uiAvatar" class="avatar avatar-lg">?</div>
+        <div class="ui-head">
+          <strong id="uiName">—</strong>
+          <span id="uiUsername" class="ui-sub">@—</span>
+        </div>
+      </div>
+      <div class="info-list">
+        <div class="info-row"><span>生日</span><b id="uiBirthday">未填写</b></div>
+        <div class="info-row"><span>学校</span><b id="uiSchool">未填写</b></div>
+        <div class="info-row"><span>地址</span><b id="uiAddress">未填写</b></div>
+        <div class="info-row"><span>注册</span><b id="uiCreated">—</b></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="userInfoClose2" class="btn-ghost">关闭</button>
+      </div>
     </div>
   </div>
 

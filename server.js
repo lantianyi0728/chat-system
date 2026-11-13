@@ -152,7 +152,8 @@ db.exec(`
     birthday     TEXT,
     school       TEXT,
     address      TEXT,
-    avatar       TEXT
+    avatar       TEXT,
+    color        TEXT
   );
 
   /* 表情包表：每个用户自己的图片表情，一行一张图 */
@@ -163,6 +164,14 @@ db.exec(`
     created_at  TEXT NOT NULL
   );
 `);
+
+/* profiles 表新增 color 列：每个用户注册时随机分配的头像底色 */
+(function migrateProfiles() {
+  const cols = db.prepare('PRAGMA table_info(profiles)').all();
+  if (!cols.some((c) => c.name === 'color')) {
+    db.exec('ALTER TABLE profiles ADD COLUMN color TEXT');
+  }
+})();
 
 /* 消息表新增 type 列：text=文字，image=图片消息。
    老库可能已有 messages 表且没有 type 列，这里做一次安全迁移 */
@@ -197,6 +206,7 @@ const SQL = {
       u.created_at,
       COALESCE(p.display_name, u.username) AS display_name,
       p.avatar AS avatar,
+      p.color AS color,
       (SELECT COUNT(*) FROM messages m
         WHERE m.sender_id = u.id AND m.receiver_id = ? AND m.is_read = 0) AS unread,
       (SELECT m2.content FROM messages m2
@@ -242,7 +252,7 @@ const SQL = {
 
   /* 个人资料 */
   getProfile: db.prepare(
-    `SELECT display_name, birthday, school, address, avatar FROM profiles WHERE user_id = ?`
+    `SELECT display_name, birthday, school, address, avatar, color FROM profiles WHERE user_id = ?`
   ),
   upsertProfile: db.prepare(`
     INSERT INTO profiles (user_id, display_name, birthday, school, address, avatar)
@@ -255,6 +265,10 @@ const SQL = {
       avatar       = excluded.avatar
   `),
   ensureProfile: db.prepare(`INSERT OR IGNORE INTO profiles (user_id) VALUES (?)`),
+  insertProfileColor: db.prepare(
+    `INSERT OR IGNORE INTO profiles (user_id, color) VALUES (?, ?)`
+  ),
+  setColor: db.prepare(`UPDATE profiles SET color = ? WHERE user_id = ?`),
   setAvatar: db.prepare(`UPDATE profiles SET avatar = ? WHERE user_id = ?`),
 
   /* 表情包（用户自己的图片表情） */
@@ -279,6 +293,21 @@ const SQL = {
  *  校验时不"解密"，而是用同样的盐再算一次，比对两个哈希是否相等。
  * ========================================================================== */
 const nowISO = () => new Date().toISOString();
+
+/* 未设置头像时，字母头像的随机底色。注册时随机分配一个，之后固定不变 */
+const AVATAR_COLORS = [
+  '#3b7cf6', '#7c5cf0', '#e0568f', '#e0703b', '#22a06b',
+  '#0ea5b7', '#d64545', '#8b6b3f', '#4f5bd5', '#c026a8',
+];
+const randomColor = () => {
+  // 尽量挑一个还没被其他用户使用的颜色，避免大家头像撞色
+  const used = new Set(
+    db.prepare('SELECT color FROM profiles WHERE color IS NOT NULL').all().map((r) => r.color)
+  );
+  const free = AVATAR_COLORS.filter((c) => !used.has(c));
+  const pool = free.length ? free : AVATAR_COLORS;
+  return pool[Math.floor(Math.random() * pool.length)];
+};
 
 function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 32).toString('hex');
@@ -320,6 +349,19 @@ function issueToken(userId) {
   console.log('[初始化] 已创建演示账号：小明 / 小红 / 阿杰（密码均为 123456）');
 })();
 
+/* 给所有还没有头像底色的用户补一个随机颜色（老账号 / 演示账号） */
+(function backfillColors() {
+  const users = db.prepare('SELECT id FROM users').all();
+  const getC = db.prepare('SELECT color FROM profiles WHERE user_id = ?');
+  const ins = db.prepare('INSERT OR IGNORE INTO profiles (user_id, color) VALUES (?, ?)');
+  const upd = db.prepare('UPDATE profiles SET color = ? WHERE user_id = ?');
+  for (const u of users) {
+    const row = getC.get(u.id);
+    if (!row) ins.run(u.id, randomColor());
+    else if (!row.color) upd.run(randomColor(), u.id);
+  }
+})();
+
 
 /* ============================================================================
  *  第 5 步：HTTP 工具函数
@@ -334,13 +376,13 @@ function sendJSON(res, status, data) {
   res.end(body);
 }
 
-// 读取请求体并解析 JSON，限制 1MB 防止被塞大包
+// 读取请求体并解析 JSON，限制 12MB（图片/语音的 base64 可能较大）
 function readJSON(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
     req.on('data', (chunk) => {
       raw += chunk;
-      if (raw.length > 1024 * 1024) {
+      if (raw.length > 12 * 1024 * 1024) {
         reject(new Error('请求体过大'));
         req.destroy();
       }
@@ -376,6 +418,22 @@ function saveImageDataURL(dataURL, subdir) {
   return '/uploads/' + subdir + '/' + name;
 }
 
+// 把前端录音的 data:audio/...;base64,... 解码落盘
+// 注意浏览器可能带 codecs 参数：data:audio/webm;codecs=opus;base64,xxxx
+function saveAudioDataURL(dataURL) {
+  const m = /^data:audio\/(webm|ogg|mp4|mpeg|wav|x-wav)[^,]*;base64,(.+)$/i.exec(String(dataURL || '').trim());
+  if (!m) throw new Error('不支持的录音格式');
+  const map = { webm: 'webm', ogg: 'ogg', mp4: 'm4a', mpeg: 'mp3', wav: 'wav', 'x-wav': 'wav' };
+  const ext = map[m[1].toLowerCase()] || 'webm';
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > 8 * 1024 * 1024) throw new Error('语音不能超过 8MB');
+  const dir = path.join(PUBLIC_DIR, 'uploads', 'audio');
+  fs.mkdirSync(dir, { recursive: true });
+  const name = crypto.randomBytes(12).toString('hex') + '.' + ext;
+  fs.writeFileSync(path.join(dir, name), buf);
+  return '/uploads/audio/' + name;
+}
+
 // 从 Authorization: Bearer <token> 中取出登录态
 function currentUser(req) {
   const auth = req.headers.authorization || '';
@@ -393,7 +451,15 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
   '.ico': 'image/x-icon',
+  /* 语音消息用到的音频格式 */
+  '.webm': 'audio/webm',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
 };
 
 
@@ -423,6 +489,7 @@ async function handleAPI(req, res, url, pathname) {
     }
 
     const id = createUser(name, String(password));
+    SQL.insertProfileColor.run(id, randomColor());   // 注册时随机分配头像底色
     const token = issueToken(id);
     return sendJSON(res, 200, { token, user: { id, username: name } });
   }
@@ -459,6 +526,7 @@ async function handleAPI(req, res, url, pathname) {
         school: p.school || '',
         address: p.address || '',
         avatar: p.avatar || '',
+        color: p.color || '',
       },
     });
   }
@@ -483,11 +551,13 @@ async function handleAPI(req, res, url, pathname) {
     return sendJSON(res, 200, { messages: rows });
   }
 
-  // 发送消息（支持文字 text 与图片 image 两种类型）
+  // 发送消息（支持文字 text、图片 image、语音 audio 三种类型）
   if (pathname === '/api/messages' && req.method === 'POST') {
     const body = await readJSON(req);
     const peerId = Number(body.toUserId);
-    const type = body.type === 'image' ? 'image' : 'text';
+    let type = 'text';
+    if (body.type === 'image') type = 'image';
+    else if (body.type === 'audio') type = 'audio';
     const text = String(body.content || '').trim();
 
     if (!Number.isInteger(peerId) || !SQL.findUserById.get(peerId)) {
@@ -498,6 +568,11 @@ async function handleAPI(req, res, url, pathname) {
       // 图片消息：content 必须是本服务自己生成的 /uploads/ 路径，杜绝任意文件读取
       if (!/^\/uploads\/[a-zA-Z0-9_./-]+\.(png|jpe?g|gif|webp)$/i.test(text)) {
         return sendJSON(res, 400, { error: '图片地址不合法' });
+      }
+    } else if (type === 'audio') {
+      // 语音消息：同样只允许本服务上传目录里的音频文件
+      if (!/^\/uploads\/[a-zA-Z0-9_./-]+\.(webm|ogg|m4a|mp3|wav)$/i.test(text)) {
+        return sendJSON(res, 400, { error: '语音地址不合法' });
       }
     } else {
       if (!text) return sendJSON(res, 400, { error: '消息不能为空' });
@@ -568,6 +643,40 @@ async function handleAPI(req, res, url, pathname) {
     const b = await readJSON(req);
     SQL.deleteSticker.run(Number(b.id), me.id);
     return sendJSON(res, 200, { ok: true });
+  }
+
+  /* ---------- 6.8 语音上传 ---------- */
+  if (pathname === '/api/audio' && req.method === 'POST') {
+    const b = await readJSON(req);
+    let relPath;
+    try {
+      relPath = saveAudioDataURL(b.audio);
+    } catch (e) {
+      return sendJSON(res, 400, { error: e.message });
+    }
+    return sendJSON(res, 200, { audio: relPath });
+  }
+
+  /* ---------- 6.9 查看他人资料 ---------- */
+  const mProf = /^\/api\/users\/(\d+)\/profile$/.exec(pathname);
+  if (mProf && req.method === 'GET') {
+    const uid = Number(mProf[1]);
+    const u = SQL.findUserById.get(uid);
+    if (!u) return sendJSON(res, 404, { error: '用户不存在' });
+    const p = SQL.getProfile.get(uid) || {};
+    return sendJSON(res, 200, {
+      profile: {
+        id: uid,
+        username: u.username,
+        display_name: p.display_name || u.username,
+        birthday: p.birthday || '',
+        school: p.school || '',
+        address: p.address || '',
+        avatar: p.avatar || '',
+        color: p.color || '',
+        created_at: u.created_at,
+      },
+    });
   }
 
   return sendJSON(res, 404, { error: '接口不存在' });

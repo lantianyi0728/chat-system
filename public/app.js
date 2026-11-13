@@ -75,6 +75,22 @@
   var stickerInput  = $('stickerInput');
   var stickerList   = $('stickerList');
 
+  /* 查看他人资料 */
+  var userInfoModal = $('userInfoModal');
+  var userInfoClose = $('userInfoClose');
+  var userInfoClose2= $('userInfoClose2');
+  var uiAvatar      = $('uiAvatar');
+  var uiName        = $('uiName');
+  var uiUsername    = $('uiUsername');
+  var uiBirthday    = $('uiBirthday');
+  var uiSchool      = $('uiSchool');
+  var uiAddress     = $('uiAddress');
+  var uiCreated     = $('uiCreated');
+
+  /* 语音消息 */
+  var voiceBtn      = $('voiceBtn');
+  var recHint       = $('recHint');
+
   /* ================================================================
      一、通用请求封装
      ================================================================ */
@@ -200,7 +216,7 @@
 
     var initial = (me.username || '?').slice(0, 1).toUpperCase();
     myName.textContent = myProfile.display_name || me.username;
-    setAvatarEl(myAvatar, myProfile.avatar, initial);
+    setAvatarEl(myAvatar, myProfile.avatar, initial, myProfile.color);
 
     buildEmojiGrid();
     refreshUsers();
@@ -239,12 +255,13 @@
       var name = u.display_name || u.username;
       var preview;
       if (u.last_type === 'image') preview = '[图片]';
+      else if (u.last_type === 'audio') preview = '[语音]';
       else if (u.last_message) preview = escapeHTML(u.last_message).slice(0, 30);
       else preview = '还没有聊天记录';
 
       return '' +
         '<li class="user-item' + (isActive ? ' active' : '') + '" data-id="' + u.id + '">' +
-          '<div class="avatar">' + avatarInner(u.avatar, initial) + '</div>' +
+          avatarHTML(u.avatar, initial, u.color) +
           '<div class="user-body">' +
             '<div class="user-row">' +
               '<span class="user-name">' + escapeHTML(name) + '</span>' +
@@ -262,6 +279,17 @@
         var u = users.filter(function (x) { return x.id === id; })[0];
         if (u) openConversation(u);
       });
+
+      // 点头像 = 看资料（阻止冒泡，避免同时打开聊天）
+      var av = li.querySelector('.avatar');
+      if (av) {
+        av.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var id = Number(li.dataset.id);
+          var u = users.filter(function (x) { return x.id === id; })[0];
+          if (u) openUserInfo(u);
+        });
+      }
     });
   }
 
@@ -280,7 +308,7 @@
 
     var initial = user.username.slice(0, 1).toUpperCase();
     peerName.textContent = user.display_name || user.username;
-    peerAvatar.innerHTML = avatarInner(user.avatar, initial);
+    setAvatarEl(peerAvatar, user.avatar, initial, user.color);
 
     renderUsers();          // 高亮当前选中项
     refreshMessages();
@@ -401,6 +429,8 @@
     var body;
     if (m.type === 'image') {
       body = '<div class="bubble bubble-img"><img src="' + escapeHTML(m.content) + '" alt="图片"></div>';
+    } else if (m.type === 'audio') {
+      body = '<div class="bubble bubble-audio"><audio controls preload="metadata" src="' + escapeHTML(m.content) + '"></audio></div>';
     } else {
       body = '<div class="bubble">' + escapeHTML(m.content) + '</div>';
     }
@@ -461,13 +491,20 @@
   /* ================================================================
      九、头像渲染小工具
      ================================================================ */
-  function avatarInner(url, initial) {
-    return url
-      ? '<img class="avatar-img" src="' + escapeHTML(url) + '" alt="">'
-      : escapeHTML(initial);
+  // 生成完整头像元素：有图片用图片，没有就用「首字 + 专属底色」
+  function avatarHTML(url, initial, color, cls) {
+    var c = 'avatar' + (cls ? ' ' + cls : '');
+    var bg = color ? ' style="background:' + color + '"' : '';
+    if (url) {
+      return '<div class="' + c + '"' + bg + '><img class="avatar-img" src="' + escapeHTML(url) + '" alt=""></div>';
+    }
+    return '<div class="' + c + '"' + bg + '>' + escapeHTML(initial) + '</div>';
   }
-  function setAvatarEl(el, url, initial) {
-    if (el) el.innerHTML = avatarInner(url, initial);
+  function setAvatarEl(el, url, initial, color) {
+    if (!el) return;
+    el.style.background = color || '';
+    if (url) el.innerHTML = '<img class="avatar-img" src="' + escapeHTML(url) + '" alt="">';
+    else el.innerHTML = escapeHTML(initial);
   }
 
   /* ================================================================
@@ -481,7 +518,7 @@
       pfBirthday.value = p.birthday || '';
       pfSchool.value = p.school || '';
       pfAddress.value = p.address || '';
-      setAvatarEl(profileAvatar, p.avatar, (me.username || '?').slice(0, 1).toUpperCase());
+      setAvatarEl(profileAvatar, p.avatar, (me.username || '?').slice(0, 1).toUpperCase(), p.color);
       profileMsg.textContent = '';
       profileModal.classList.remove('hidden');
     }).catch(function (err) { alert(err.message); });
@@ -519,8 +556,8 @@
         .then(function (data) {
           myProfile.avatar = data.avatar;
           var init = (me.username || '?').slice(0, 1).toUpperCase();
-          setAvatarEl(myAvatar, data.avatar, init);
-          setAvatarEl(profileAvatar, data.avatar, init);
+          setAvatarEl(myAvatar, data.avatar, init, myProfile.color);
+          setAvatarEl(profileAvatar, data.avatar, init, myProfile.color);
         }).catch(function (err) { alert('头像上传失败：' + err.message); });
     };
     reader.readAsDataURL(file);
@@ -614,7 +651,112 @@
   }
 
   /* ================================================================
-     十二、事件绑定
+     十二、查看他人资料
+     ================================================================ */
+  function openUserInfo(u) {
+    api('/api/users/' + u.id + '/profile').then(function (data) {
+      var p = data.profile || {};
+      var initial = (p.username || '?').slice(0, 1).toUpperCase();
+      setAvatarEl(uiAvatar, p.avatar, initial, p.color);
+      uiName.textContent = p.display_name || p.username;
+      uiUsername.textContent = '@' + p.username;
+      uiBirthday.textContent = p.birthday || '未填写';
+      uiSchool.textContent = p.school || '未填写';
+      uiAddress.textContent = p.address || '未填写';
+      uiCreated.textContent = p.created_at ? new Date(p.created_at).toLocaleDateString() : '—';
+      userInfoModal.classList.remove('hidden');
+    }).catch(function (err) { alert(err.message); });
+  }
+  function closeUserInfo() { userInfoModal.classList.add('hidden'); }
+
+  /* ================================================================
+     十三、语音消息（录音 → 上传 → 发送）
+     ================================================================ */
+  var recorder = null, recChunks = [], recording = false, recStart = 0, recTimer = null, recStream = null;
+
+  function setRecUI(on) {
+    recording = on;
+    voiceBtn.classList.toggle('recording', on);
+    recHint.classList.toggle('hidden', !on);
+    voiceBtn.title = on ? '点击结束录音并发送' : '点击开始录音';
+  }
+
+  function startRecording() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      alert('当前浏览器不支持录音，或页面不是 HTTPS / 本机(localhost) 环境。\n浏览器的安全限制：麦克风只能在 HTTPS 或 localhost 下使用。');
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      recStream = stream;
+      recChunks = [];
+      var opts = {};
+      if (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        opts.mimeType = 'audio/webm;codecs=opus';
+      }
+      recorder = new MediaRecorder(stream, opts);
+      recorder.ondataavailable = function (e) { if (e.data && e.data.size) recChunks.push(e.data); };
+      recorder.onstop = function () { finishRecording(); };
+      recorder.start();
+      recStart = Date.now();
+      setRecUI(true);
+      recHint.textContent = '录音中… 0:00';
+      recTimer = setInterval(function () {
+        var s = Math.floor((Date.now() - recStart) / 1000);
+        recHint.textContent = '录音中… ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+        if (s >= 60) stopRecording();   // 最长 60 秒
+      }, 200);
+    }).catch(function (err) {
+      alert('无法打开麦克风：' + (err && err.message ? err.message : '请检查浏览器权限') +
+        '\n注意：录音需要 HTTPS 或 localhost 访问。');
+    });
+  }
+
+  function stopRecording() {
+    if (recTimer) { clearInterval(recTimer); recTimer = null; }
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    if (recStream) {
+      recStream.getTracks().forEach(function (t) { t.stop(); });
+      recStream = null;
+    }
+  }
+
+  function finishRecording() {
+    setRecUI(false);
+    var blob = new Blob(recChunks, { type: recChunks[0] ? recChunks[0].type : 'audio/webm' });
+    recChunks = [];
+    if (!blob.size) { alert('没有录到声音，请重试'); return; }
+    if (blob.size > 8 * 1024 * 1024) { alert('语音太长（超过 8MB），请录短一点'); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      api('/api/audio', { method: 'POST', body: { audio: reader.result } })
+        .then(function (data) { sendVoice(data.audio); })
+        .catch(function (err) { alert('语音发送失败：' + err.message); });
+    };
+    reader.readAsDataURL(blob);
+  }
+
+  function toggleRecording() {
+    if (recording) stopRecording();
+    else startRecording();
+  }
+
+  function sendVoice(path) {
+    if (!peer) { alert('请先选择一个聊天对象'); return; }
+    if (busy) return;
+    busy = true;
+    api('/api/messages', {
+      method: 'POST',
+      body: { toUserId: peer.id, content: path, type: 'audio' }
+    }).then(function (data) {
+      appendMessage(data.message);
+      refreshUsers();
+    }).catch(function (err) {
+      alert('发送失败：' + err.message);
+    }).finally(function () { busy = false; });
+  }
+
+  /* ================================================================
+     十四、事件绑定
      ================================================================ */
   if (profileBtn) profileBtn.addEventListener('click', openProfile);
   if (meBox) meBox.addEventListener('click', openProfile);
@@ -640,5 +782,16 @@
     if (emojiPanel.contains(e.target) || emojiBtn.contains(e.target)) return;
     closeEmojiPanel();
   });
+
+  /* 查看他人资料 */
+  if (userInfoClose) userInfoClose.addEventListener('click', closeUserInfo);
+  if (userInfoClose2) userInfoClose2.addEventListener('click', closeUserInfo);
+  // 点聊天顶部对方头像 → 看他的资料
+  if (peerAvatar) peerAvatar.addEventListener('click', function () {
+    if (peer) openUserInfo(peer);
+  });
+
+  /* 语音 */
+  if (voiceBtn) voiceBtn.addEventListener('click', toggleRecording);
 
 })();
