@@ -165,12 +165,23 @@ db.exec(`
     created_at  TEXT NOT NULL
   );
 
-  /* 用户偏好设置：键值对存储（壁纸、字体、AI 接口等） */
+  /* 用户偏好设置：键值对存储（字体、AI 接口等） */
   CREATE TABLE IF NOT EXISTS prefs (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     key     TEXT    NOT NULL,
     value   TEXT,
     PRIMARY KEY (user_id, key)
+  );
+
+  /* 聊天壁纸：按「对话」存，owner_id 设置的壁纸只影响 owner 与 peer 这一个会话。
+     scope = me 仅自己可见 / both 双方可见（对方也看到这张图） */
+  CREATE TABLE IF NOT EXISTS wallpapers (
+    owner_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    peer_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    image_path TEXT    NOT NULL,
+    scope      TEXT    NOT NULL DEFAULT 'me',
+    updated_at TEXT    NOT NULL,
+    PRIMARY KEY (owner_id, peer_id)
   );
 `);
 
@@ -296,12 +307,31 @@ const SQL = {
     `DELETE FROM stickers WHERE id = ? AND user_id = ?`
   ),
 
-  /* 用户偏好（壁纸 / 字体 / AI 接口） */
+  /* 用户偏好（字体 / AI 接口） */
   getPrefs: db.prepare(`SELECT key, value FROM prefs WHERE user_id = ?`),
   setPref: db.prepare(`
     INSERT INTO prefs (user_id, key, value) VALUES (?, ?, ?)
     ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value
   `),
+
+  /* 聊天壁纸（按对话存：owner 和 peer 一对一） */
+  getWallpaper: db.prepare(
+    `SELECT image_path, scope FROM wallpapers WHERE owner_id = ? AND peer_id = ?`
+  ),
+  upsertWallpaper: db.prepare(`
+    INSERT INTO wallpapers (owner_id, peer_id, image_path, scope, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(owner_id, peer_id) DO UPDATE SET
+      image_path = excluded.image_path,
+      scope      = excluded.scope,
+      updated_at = excluded.updated_at
+  `),
+  setWallpaperScope: db.prepare(
+    `UPDATE wallpapers SET scope = ?, updated_at = ? WHERE owner_id = ? AND peer_id = ?`
+  ),
+  deleteWallpaper: db.prepare(
+    `DELETE FROM wallpapers WHERE owner_id = ? AND peer_id = ?`
+  ),
 };
 
 
@@ -332,8 +362,6 @@ const randomColor = () => {
 
 /* 用户偏好默认值（聊天壁纸、文字样式、AI 接口配置） */
 const PREF_DEFAULTS = {
-  wallpaper: '',
-  wallpaper_scope: 'me',
   font_size: '14',
   text_color: '#ffffff',
   bubble_bg: '#3b7cf6',
@@ -605,12 +633,17 @@ async function handleAPI(req, res, url, pathname) {
     const rows = SQL.conversation.all(me.id, peerId, peerId, me.id);
     SQL.markRead.run(peerId, me.id);
 
-    // 对方的聊天壁纸：只有他设置为「双方可见」时才下发
-    const pp = {};
-    SQL.getPrefs.all(peerId).forEach((r) => { pp[r.key] = r.value; });
-    const peerWallpaper = pp.wallpaper_scope === 'both' ? (pp.wallpaper || '') : '';
+    // 壁纸是「对话级」的：只取我和这个人之间的设置
+    const mine = SQL.getWallpaper.get(me.id, peerId) || null;
+    const theirs = SQL.getWallpaper.get(peerId, me.id) || null;
 
-    return sendJSON(res, 200, { messages: rows, peerWallpaper });
+    return sendJSON(res, 200, {
+      messages: rows,
+      myWallpaper: mine ? mine.image_path : '',
+      myWallpaperScope: mine ? mine.scope : 'me',
+      // 对方的壁纸只有他设为「双方可见」时才下发
+      peerWallpaper: theirs && theirs.scope === 'both' ? theirs.image_path : '',
+    });
   }
 
   // 发送消息（支持文字 text、图片 image、语音 audio 三种类型）
@@ -767,16 +800,42 @@ async function handleAPI(req, res, url, pathname) {
     return sendJSON(res, 200, { video: relPath });
   }
 
-  /* ---------- 6.12 聊天壁纸上传 ---------- */
+  /* ---------- 6.12 聊天壁纸（按「对话」存，不影响其他会话） ---------- */
   if (pathname === '/api/wallpaper' && req.method === 'POST') {
     const b = await readJSON(req);
+    const peerId = Number(b.peerId);
+    if (!Number.isInteger(peerId) || peerId === me.id || !SQL.findUserById.get(peerId)) {
+      return sendJSON(res, 400, { error: '请先选择一个聊天对象' });
+    }
     let relPath;
     try { relPath = saveImageDataURL(b.image, 'wallpapers', 10 * 1024 * 1024); }
     catch (e) { return sendJSON(res, 400, { error: e.message }); }
     const scope = b.scope === 'both' ? 'both' : 'me';
-    SQL.setPref.run(me.id, 'wallpaper', relPath);
-    SQL.setPref.run(me.id, 'wallpaper_scope', scope);
-    return sendJSON(res, 200, { wallpaper: relPath, scope });
+    SQL.upsertWallpaper.run(me.id, peerId, relPath, scope, nowISO());
+    return sendJSON(res, 200, { wallpaper: relPath, scope, peerId });
+  }
+
+  /* 只改可见范围，不重新上传图片 */
+  if (pathname === '/api/wallpaper' && req.method === 'PUT') {
+    const b = await readJSON(req);
+    const peerId = Number(b.peerId);
+    if (!Number.isInteger(peerId) || peerId === me.id || !SQL.findUserById.get(peerId)) {
+      return sendJSON(res, 400, { error: '请先选择一个聊天对象' });
+    }
+    const scope = b.scope === 'both' ? 'both' : 'me';
+    SQL.setWallpaperScope.run(scope, nowISO(), me.id, peerId);
+    return sendJSON(res, 200, { ok: true, scope });
+  }
+
+  /* 清掉这个会话的壁纸 */
+  if (pathname === '/api/wallpaper' && req.method === 'DELETE') {
+    const b = await readJSON(req);
+    const peerId = Number(b.peerId);
+    if (!Number.isInteger(peerId) || peerId <= 0) {
+      return sendJSON(res, 400, { error: 'peerId 不合法' });
+    }
+    SQL.deleteWallpaper.run(me.id, peerId);
+    return sendJSON(res, 200, { ok: true });
   }
 
   /* ---------- 6.13 读取 / 保存个人设置 ---------- */
@@ -788,7 +847,7 @@ async function handleAPI(req, res, url, pathname) {
   if (pathname === '/api/settings' && req.method === 'PUT') {
     const b = await readJSON(req);
     const allowed = [
-      'wallpaper', 'wallpaper_scope', 'font_size', 'text_color', 'bubble_bg',
+      'font_size', 'text_color', 'bubble_bg',
       'input_bg', 'font_family', 'api_base', 'api_key', 'api_model',
     ];
     for (const k of allowed) {

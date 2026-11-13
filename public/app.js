@@ -26,11 +26,11 @@
 
   /* 设置 / 壁纸 / 文字样式 / AI */
   var prefs = {
-    wallpaper: '', wallpaper_scope: 'me',
     font_size: '14', text_color: '#ffffff', bubble_bg: '#3b7cf6', font_family: 'system',
     api_base: '', api_key: '', api_model: ''
   };
-  var peerWallpaper = '';     // 对方「双方可见」的壁纸
+  /* 聊天壁纸是「对话级」的：只作用于当前和 peer 的这一个会话 */
+  var chatWallpaper = { mine: '', scope: 'me', peer: '' };
   var recentMsgs = [];        // 最近消息，供 AI 生成回复建议
   var lastSugForId = 0;
   var lastSugTime = 0;
@@ -140,6 +140,8 @@
   var wallpaperUploadBtn = $('wallpaperUploadBtn');
   var wallpaperClearBtn  = $('wallpaperClearBtn');
   var wallpaperInput= $('wallpaperInput');
+  var wpTitle       = $('wpTitle');
+  var wpHint        = $('wpHint');
   var setFontSize   = $('setFontSize');
   var fontSizeVal   = $('fontSizeVal');
   var setTextColor  = $('setTextColor');
@@ -280,8 +282,7 @@
     if (aiSprite) aiSprite.classList.add('hidden');
     if (aiPanel) aiPanel.classList.add('hidden');
     hideSuggestion();
-    prefs.wallpaper = '';
-    peerWallpaper = '';
+    chatWallpaper = { mine: '', scope: 'me', peer: '' };
     recentMsgs = [];
     lastSugForId = 0;
     aiHistory = [];
@@ -387,7 +388,7 @@
 
     // 换人：把上一个人的建议、壁纸、上下文全部清掉
     hideSuggestion();
-    peerWallpaper = '';
+    chatWallpaper = { mine: '', scope: 'me', peer: '' };
     recentMsgs = [];
     lastSugForId = 0;
     applyWallpaper();
@@ -411,10 +412,16 @@
     api('/api/messages?peerId=' + peer.id).then(function (data) {
       var list = data.messages || [];
 
-      // 对方的「双方可见」壁纸：变了才重新上墙，避免每 2.5 秒刷一次背景
-      var pw = data.peerWallpaper || '';
-      if (pw !== peerWallpaper) {
-        peerWallpaper = pw;
+      // 这个会话的壁纸（我设的 + 对方公开的）：变了才重新上墙，避免每 2.5 秒刷背景
+      var nextWp = {
+        mine: data.myWallpaper || '',
+        scope: data.myWallpaperScope === 'both' ? 'both' : 'me',
+        peer: data.peerWallpaper || ''
+      };
+      if (nextWp.mine !== chatWallpaper.mine ||
+          nextWp.peer !== chatWallpaper.peer ||
+          nextWp.scope !== chatWallpaper.scope) {
+        chatWallpaper = nextWp;
         applyWallpaper();
       }
 
@@ -931,11 +938,11 @@
     root.style.setProperty('--my-font', FONT_STACKS[prefs.font_family] || FONT_STACKS.system);
   }
 
-  // 上壁纸：优先用自己设的；自己没设、而对方开了「双方可见」就用对方的
+  // 上壁纸：只作用于当前会话。优先用自己给这个人设的；自己没设、而对方开了「双方可见」就用对方的
   function applyWallpaper() {
     var main = document.querySelector('.chat-main');
     if (!main) return;
-    var url = prefs.wallpaper || peerWallpaper || '';
+    var url = chatWallpaper.mine || chatWallpaper.peer || '';
     if (url) {
       main.style.backgroundImage = 'url("' + url + '")';
       main.classList.add('has-wallpaper');
@@ -949,18 +956,17 @@
     api('/api/settings').then(function (data) {
       prefs = Object.assign({}, prefs, data.settings || {});
       applyTheme();
-      applyWallpaper();
     }).catch(function () { /* 静默 */ });
   }
 
   function renderWallpaperPreview() {
     if (!wallpaperPreview) return;
-    if (prefs.wallpaper) {
-      wallpaperPreview.style.backgroundImage = 'url("' + prefs.wallpaper + '")';
+    if (chatWallpaper.mine) {
+      wallpaperPreview.style.backgroundImage = 'url("' + chatWallpaper.mine + '")';
       wallpaperPreview.textContent = '';
     } else {
       wallpaperPreview.style.backgroundImage = '';
-      wallpaperPreview.textContent = '未设置';
+      wallpaperPreview.textContent = peer ? '本对话未设置' : '先选聊天对象';
     }
   }
 
@@ -970,15 +976,36 @@
     });
   }
 
+  // 壁纸是「对话级」的：没选聊天对象时，壁纸相关控件禁用并给出提示
+  function updateWallpaperUI() {
+    var on = !!peer;
+    var name = peer ? (peer.display_name || peer.username) : '';
+    if (wallpaperUploadBtn) wallpaperUploadBtn.disabled = !on;
+    if (wallpaperClearBtn) wallpaperClearBtn.disabled = !on;
+    document.querySelectorAll('input[name="wpScope"]').forEach(function (r) { r.disabled = !on; });
+    if (wpTitle) wpTitle.textContent = on ? '聊天壁纸 · 与「' + name + '」的对话' : '聊天壁纸';
+
+    if (!on) {
+      chatWallpaper = { mine: '', scope: 'me', peer: '' };
+      pendingScope = 'me';
+      setScopeRadio('me');
+    } else {
+      pendingScope = chatWallpaper.scope === 'both' ? 'both' : 'me';
+      setScopeRadio(pendingScope);
+    }
+    renderWallpaperPreview();
+
+    if (wpHint) {
+      wpHint.textContent = on
+        ? '只影响你和「' + name + '」这一个对话，其他聊天不受影响；换个聊天对象需要单独设置。'
+        : '请先在左侧选择一个聊天对象。壁纸按对话单独设置，不会影响其他聊天。';
+    }
+  }
+
   function openSettings() {
     api('/api/settings').then(function (data) {
       prefs = Object.assign({}, prefs, data.settings || {});
       applyTheme();
-      applyWallpaper();
-
-      pendingScope = prefs.wallpaper_scope === 'both' ? 'both' : 'me';
-      setScopeRadio(pendingScope);
-      renderWallpaperPreview();
 
       setFontSize.value = prefs.font_size || '14';
       fontSizeVal.textContent = (prefs.font_size || '14') + 'px';
@@ -989,6 +1016,7 @@
       setApiKey.value = prefs.api_key || '';
       setApiModel.value = prefs.api_model || '';
 
+      updateWallpaperUI();
       settingsMsg.textContent = '';
       settingsModal.classList.remove('hidden');
     }).catch(function (err) { alert(err.message); });
@@ -996,6 +1024,7 @@
 
   function saveSettings() {
     if (busy) return;
+    var prevScope = chatWallpaper.scope;
     busy = true;
     settingsMsg.textContent = '保存中…';
 
@@ -1006,14 +1035,24 @@
       font_family: setFontFamily.value,
       api_base: setApiBase.value.trim().replace(/\/+$/, ''),
       api_key: setApiKey.value.trim(),
-      api_model: setApiModel.value.trim(),
-      wallpaper_scope: pendingScope
+      api_model: setApiModel.value.trim()
     };
 
     api('/api/settings', { method: 'PUT', body: body }).then(function () {
       prefs = Object.assign({}, prefs, body);
       applyTheme();
-      applyWallpaper();
+
+      // 只改了「可见范围」的话，单独更新这个对话的壁纸设置
+      if (peer && chatWallpaper.mine && pendingScope !== prevScope) {
+        return api('/api/wallpaper', {
+          method: 'PUT',
+          body: { peerId: peer.id, scope: pendingScope }
+        }).then(function () {
+          chatWallpaper.scope = pendingScope;
+        });
+      }
+      return null;
+    }).then(function () {
       settingsModal.classList.add('hidden');
       if (prefs.api_base && prefs.api_key && prefs.api_model) {
         appendAiMsg('API 配好啦，我在右下角待命，随时喊我 🧚', 'tip');
@@ -1025,6 +1064,7 @@
 
   function uploadWallpaper(file) {
     if (!file) return;
+    if (!peer) { settingsMsg.textContent = '请先选择一个聊天对象'; return; }
     if (!/^image\//.test(file.type)) { alert('请选择图片文件'); return; }
 
     var reader = new FileReader();
@@ -1032,15 +1072,15 @@
       settingsMsg.textContent = '壁纸上传中…';
       api('/api/wallpaper', {
         method: 'POST',
-        body: { image: reader.result, scope: pendingScope }
+        body: { image: reader.result, scope: pendingScope, peerId: peer.id }
       }).then(function (data) {
-        prefs.wallpaper = data.wallpaper;
-        prefs.wallpaper_scope = data.scope;
+        chatWallpaper.mine = data.wallpaper;
+        chatWallpaper.scope = data.scope;
         renderWallpaperPreview();
         applyWallpaper();
         settingsMsg.textContent = data.scope === 'both'
-          ? '壁纸已生效：双方都能看到'
-          : '壁纸已生效：仅自己可见';
+          ? '已应用到当前对话：双方都能看到'
+          : '已应用到当前对话：仅自己可见';
       }).catch(function (err) {
         settingsMsg.textContent = err.message;
       });
@@ -1049,11 +1089,15 @@
   }
 
   function clearWallpaper() {
-    api('/api/settings', { method: 'PUT', body: { wallpaper: '' } }).then(function () {
-      prefs.wallpaper = '';
+    if (!peer) { settingsMsg.textContent = '请先选择一个聊天对象'; return; }
+    api('/api/wallpaper', { method: 'DELETE', body: { peerId: peer.id } }).then(function () {
+      chatWallpaper.mine = '';
+      chatWallpaper.scope = 'me';
+      pendingScope = 'me';
+      setScopeRadio('me');
       renderWallpaperPreview();
       applyWallpaper();
-      settingsMsg.textContent = '壁纸已清除';
+      settingsMsg.textContent = '当前对话的壁纸已清除';
     }).catch(function (err) { settingsMsg.textContent = err.message; });
   }
 

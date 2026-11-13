@@ -562,6 +562,8 @@ body {
   transition:all .18s;
 }
 .btn-soft:hover { border-color:var(--brand); color:var(--brand); }
+.btn-soft:disabled, .btn-ghost:disabled { opacity:.45; cursor:not-allowed; }
+.btn-soft:disabled:hover { border-color:var(--border); color:var(--text); }
 .modal-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:6px; }
 
 /* ---------------------------------------------------------------- 表情面板 */
