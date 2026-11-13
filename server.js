@@ -183,6 +183,18 @@ db.exec(`
     updated_at TEXT    NOT NULL,
     PRIMARY KEY (owner_id, peer_id)
   );
+
+  /* 个人主页评论：profile_user_id 是被评论的人，author_id 是留言的人。
+     anonymous = 1 时对外只显示「XXX」，不暴露作者 */
+  CREATE TABLE IF NOT EXISTS comments (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content          TEXT    NOT NULL,
+    anonymous        INTEGER NOT NULL DEFAULT 0,
+    created_at       TEXT    NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_comments_profile ON comments(profile_user_id, id DESC);
 `);
 
 /* profiles 表的增量迁移：
@@ -331,6 +343,26 @@ const SQL = {
   ),
   deleteWallpaper: db.prepare(
     `DELETE FROM wallpapers WHERE owner_id = ? AND peer_id = ?`
+  ),
+
+  /* 个人主页评论 */
+  insertComment: db.prepare(`
+    INSERT INTO comments (profile_user_id, author_id, content, anonymous, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `),
+  // 匿名的一律不返回真实作者，连 id 都不给
+  listComments: db.prepare(`
+    SELECT c.id, c.content, c.anonymous, c.created_at, c.author_id,
+           COALESCE(p.display_name, u.username) AS author_name
+    FROM comments c
+    JOIN users u ON u.id = c.author_id
+    LEFT JOIN profiles p ON p.user_id = c.author_id
+    WHERE c.profile_user_id = ?
+    ORDER BY c.id DESC
+    LIMIT 200
+  `),
+  countComments: db.prepare(
+    `SELECT COUNT(*) AS n FROM comments WHERE profile_user_id = ?`
   ),
 };
 
@@ -778,6 +810,54 @@ async function handleAPI(req, res, url, pathname) {
         avatar: p.avatar || '',
         color: p.color || '',
         created_at: u.created_at,
+      },
+    });
+  }
+
+  /* ---------- 6.9.1 个人主页评论：读取 ---------- */
+  const mCmt = /^\/api\/users\/(\d+)\/comments$/.exec(pathname);
+  if (mCmt && req.method === 'GET') {
+    const uid = Number(mCmt[1]);
+    if (!SQL.findUserById.get(uid)) return sendJSON(res, 404, { error: '用户不存在' });
+    const rows = SQL.listComments.all(uid);
+    const total = SQL.countComments.get(uid).n;
+    return sendJSON(res, 200, {
+      total,
+      comments: rows.map((r) => ({
+        id: r.id,
+        content: r.content,
+        anonymous: r.anonymous ? 1 : 0,
+        // 匿名评论对所有人（包括被评论者）都只显示 XXX
+        author_name: r.anonymous ? 'XXX' : r.author_name,
+        mine: r.author_id === me.id,
+        created_at: r.created_at,
+      })),
+    });
+  }
+
+  /* ---------- 6.9.2 个人主页评论：发表 ---------- */
+  if (pathname === '/api/comments' && req.method === 'POST') {
+    const b = await readJSON(req);
+    const target = Number(b.profileUserId);
+    if (!Number.isInteger(target) || !SQL.findUserById.get(target)) {
+      return sendJSON(res, 400, { error: '用户不存在' });
+    }
+    if (target === me.id) return sendJSON(res, 400, { error: '不能给自己评论' });
+
+    const content = String(b.content || '').trim();
+    if (!content) return sendJSON(res, 400, { error: '评论内容不能为空' });
+    if (content.length > 200) return sendJSON(res, 400, { error: '评论最多 200 字' });
+
+    const anonymous = b.anonymous ? 1 : 0;
+    const info = SQL.insertComment.run(target, me.id, content, anonymous, nowISO());
+    return sendJSON(res, 200, {
+      comment: {
+        id: Number(info.lastInsertRowid),
+        content,
+        anonymous,
+        author_name: anonymous ? 'XXX' : (SQL.getProfile.get(me.id)?.display_name || me.username),
+        mine: true,
+        created_at: nowISO(),
       },
     });
   }

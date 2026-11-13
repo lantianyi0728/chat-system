@@ -548,7 +548,7 @@ body {
   width:100%; max-width:420px; background:var(--panel);
   border:1px solid var(--border); border-radius:18px;
   padding:24px 22px; box-shadow:var(--shadow);
-  max-height:88vh; overflow-y:auto;
+  max-height:90vh; overflow-y:auto;
 }
 .modal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
 .modal-head h3 { font-size:17px; font-weight:700; }
@@ -648,6 +648,61 @@ body {
   white-space:pre-wrap; word-break:break-word; max-height:132px; overflow-y:auto;
 }
 .ui-bio.empty { color:var(--text-weak); font-style:normal; }
+
+/* ---------------------------------------------------------------- 评论区 */
+.cmt-head {
+  display:flex; align-items:center; justify-content:space-between;
+  margin:14px 0 8px;
+}
+.cmt-title { font-size:13px; font-weight:700; color:var(--text); }
+.cmt-count { font-weight:600; color:var(--text-weak); margin-left:3px; }
+.btn-link {
+  border:none; background:none; padding:0; cursor:pointer;
+  font-family:inherit; font-size:12.5px; color:var(--brand);
+}
+.btn-link:hover { text-decoration:underline; }
+.btn-link.hidden { display:none; }
+
+.cmt-list {
+  border:1px solid var(--border); border-radius:12px; overflow:hidden;
+  background:#fff;
+}
+/* 展开后变成固定高度的滚动区，往下滑看完整评论 */
+.cmt-list.expanded { max-height:250px; overflow-y:auto; }
+.cmt-empty { padding:16px 12px; text-align:center; font-size:12.5px; color:var(--text-weak); }
+.cmt-item { padding:9px 13px; border-bottom:1px solid var(--border); }
+.cmt-item:last-child { border-bottom:none; }
+.cmt-user {
+  font-size:12.5px; font-weight:700; color:var(--text);
+  margin-bottom:3px; display:flex; align-items:center; gap:6px;
+}
+.cmt-user.anon { color:var(--text-weak); }
+.cmt-me {
+  font-size:10.5px; font-weight:600; color:var(--brand);
+  background:var(--brand-soft); border-radius:5px; padding:1px 5px;
+}
+.cmt-text { font-size:13px; line-height:1.6; color:var(--text); white-space:pre-wrap; word-break:break-word; }
+.cmt-time { font-size:11px; color:var(--text-weak); margin-top:4px; }
+
+.cmt-form { margin-top:10px; }
+.cmt-form textarea {
+  width:100%; min-height:62px; padding:9px 11px;
+  border:1px solid var(--border); border-radius:10px;
+  background:#fbfcfe; font-family:inherit; font-size:13px; line-height:1.55;
+  color:var(--text); outline:none; resize:vertical;
+  transition:border-color .18s, box-shadow .18s;
+}
+.cmt-form textarea:focus { border-color:var(--brand); background:#fff; box-shadow:0 0 0 3px var(--brand-soft); }
+.cmt-form-foot { display:flex; align-items:center; gap:10px; margin-top:8px; }
+.cmt-anon { display:flex; align-items:center; gap:5px; font-size:12.5px; color:var(--text-weak); cursor:pointer; }
+.cmt-anon input { accent-color:var(--brand); }
+.cmt-msg { flex:1; font-size:12px; color:#e04a4a; }
+.btn-sm { width:auto !important; padding:8px 18px; font-size:13px; border-radius:9px; }
+
+/* 资料弹窗字段密集一点，评论列表自己也滚，整体高度就可控了 */
+#profileModal .field { margin-bottom:11px; }
+#profileModal .modal-head { margin-bottom:10px; }
+#profileModal .cmt-list { max-height:210px; overflow-y:auto; }
 #peerAvatar { cursor:pointer; }
 
 /* ---------------------------------------------------------------- 加号：照片 / 视频 */

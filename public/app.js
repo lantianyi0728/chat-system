@@ -39,6 +39,13 @@
   var aiHistory = [];         // 小精灵迷你聊天记录
   var aiBusy = false;
 
+  /* 评论 */
+  var uiComments = [];        // 别人主页上的评论
+  var uiCmtExpanded = false;
+  var myComments = [];        // 我收到的评论
+  var myCmtExpanded = false;
+  var commentTargetId = 0;    // 当前正在看谁的主页
+
   var FONT_STACKS = {
     system: '-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif',
     song: '"SimSun","Songti SC",serif',
@@ -115,6 +122,18 @@
   var uiAddress     = $('uiAddress');
   var uiBio         = $('uiBio');
   var uiCreated     = $('uiCreated');
+
+  /* 评论区 */
+  var uiCmtCount    = $('uiCmtCount');
+  var uiCmtToggle   = $('uiCmtToggle');
+  var uiCmtList     = $('uiCmtList');
+  var uiCmtForm     = $('uiCmtForm');
+  var uiCmtInput    = $('uiCmtInput');
+  var uiCmtAnon     = $('uiCmtAnon');
+  var uiCmtMsg      = $('uiCmtMsg');
+  var myCmtCount    = $('myCmtCount');
+  var myCmtToggle   = $('myCmtToggle');
+  var myCmtList     = $('myCmtList');
 
   /* 语音消息 */
   var voiceBtn      = $('voiceBtn');
@@ -642,6 +661,12 @@
       setAvatarEl(profileAvatar, p.avatar, (p.display_name || me.username || '?').slice(0, 1).toUpperCase(), p.color);
       profileMsg.textContent = '';
       profileModal.classList.remove('hidden');
+
+      // 顺带把我收到的评论拉出来
+      myComments = [];
+      myCmtExpanded = false;
+      renderCommentBlock(myCmtList, myCmtToggle, myCmtCount, myComments, false);
+      loadMyComments();
     }).catch(function (err) { alert(err.message); });
   }
   function closeProfile() { profileModal.classList.add('hidden'); }
@@ -800,6 +825,17 @@
         uiBio.classList.add('empty');
       }
       uiCreated.textContent = p.created_at ? new Date(p.created_at).toLocaleDateString() : '—';
+
+      // 评论区：默认收起，只显示最新 3 条
+      commentTargetId = u.id;
+      uiCmtInput.value = '';
+      uiCmtAnon.checked = false;
+      uiCmtMsg.textContent = '';
+      uiComments = [];
+      uiCmtExpanded = false;
+      renderCommentBlock(uiCmtList, uiCmtToggle, uiCmtCount, uiComments, false);
+      loadComments(u.id);
+
       userInfoModal.classList.remove('hidden');
     }).catch(function (err) { alert(err.message); });
   }
@@ -1368,7 +1404,100 @@
   }
 
   /* ================================================================
-     十七、事件绑定
+     十七、个人主页评论
+     ----------------------------------------------------------------
+     默认只显示最新 3 条，点「展开全部」后列表变成可滚动区域看完整内容；
+     评论者可以选择匿名，匿名时名字统一显示 XXX。
+     ================================================================ */
+  function fmtCommentTime(iso) {
+    var d = new Date(iso);
+    var h = String(d.getHours()).padStart(2, '0');
+    var mi = String(d.getMinutes()).padStart(2, '0');
+    var today = new Date();
+    if (d.toDateString() === today.toDateString()) return '今天 ' + h + ':' + mi;
+    var y = new Date(today.getTime() - 86400000);
+    if (d.toDateString() === y.toDateString()) return '昨天 ' + h + ':' + mi;
+    return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + h + ':' + mi;
+  }
+
+  function renderCommentBlock(listEl, toggleEl, countEl, comments, expanded) {
+    if (!listEl) return;
+    if (countEl) countEl.textContent = comments.length;
+
+    if (!comments.length) {
+      listEl.innerHTML = '<div class="cmt-empty">还没有评论</div>';
+      listEl.classList.remove('expanded');
+      if (toggleEl) toggleEl.classList.add('hidden');
+      return;
+    }
+
+    var shown = expanded ? comments : comments.slice(0, 3);
+    listEl.innerHTML = shown.map(function (c) {
+      return '' +
+        '<div class="cmt-item">' +
+          '<div class="cmt-user' + (c.anonymous ? ' anon' : '') + '">' +
+            escapeHTML(c.author_name) +
+            (c.mine ? '<span class="cmt-me">我</span>' : '') +
+          '</div>' +
+          '<div class="cmt-text">' + escapeHTML(c.content) + '</div>' +
+          '<div class="cmt-time">' + fmtCommentTime(c.created_at) + '</div>' +
+        '</div>';
+    }).join('');
+
+    listEl.classList.toggle('expanded', !!expanded);
+
+    if (toggleEl) {
+      if (comments.length > 3) {
+        toggleEl.classList.remove('hidden');
+        toggleEl.textContent = expanded ? '收起' : '展开全部 ' + comments.length + ' 条';
+      } else {
+        toggleEl.classList.add('hidden');
+      }
+    }
+  }
+
+  function loadComments(userId) {
+    api('/api/users/' + userId + '/comments').then(function (data) {
+      uiComments = data.comments || [];
+      renderCommentBlock(uiCmtList, uiCmtToggle, uiCmtCount, uiComments, uiCmtExpanded);
+    }).catch(function () { /* 静默 */ });
+  }
+
+  function loadMyComments() {
+    if (!me) return;
+    api('/api/users/' + me.id + '/comments').then(function (data) {
+      myComments = data.comments || [];
+      renderCommentBlock(myCmtList, myCmtToggle, myCmtCount, myComments, myCmtExpanded);
+    }).catch(function () { /* 静默 */ });
+  }
+
+  function postComment() {
+    if (!commentTargetId) return;
+    var text = uiCmtInput.value.trim();
+    if (!text) { uiCmtMsg.textContent = '写点什么再发表吧'; return; }
+
+    uiCmtMsg.textContent = '发表中…';
+    api('/api/comments', {
+      method: 'POST',
+      body: {
+        profileUserId: commentTargetId,
+        content: text,
+        anonymous: uiCmtAnon.checked
+      }
+    }).then(function () {
+      uiCmtInput.value = '';
+      uiCmtAnon.checked = false;
+      uiCmtMsg.textContent = '已发表';
+      uiCmtExpanded = false;
+      loadComments(commentTargetId);
+      setTimeout(function () { if (uiCmtMsg.textContent === '已发表') uiCmtMsg.textContent = ''; }, 2000);
+    }).catch(function (err) {
+      uiCmtMsg.textContent = err.message;
+    });
+  }
+
+  /* ================================================================
+     十八、事件绑定
      ================================================================ */
   if (profileBtn) profileBtn.addEventListener('click', openProfile);
   if (meBox) meBox.addEventListener('click', openProfile);
@@ -1399,6 +1528,20 @@
   /* 查看他人资料 */
   if (userInfoClose) userInfoClose.addEventListener('click', closeUserInfo);
   if (userInfoClose2) userInfoClose2.addEventListener('click', closeUserInfo);
+
+  /* 评论：发表 + 展开/收起 */
+  if (uiCmtForm) uiCmtForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    postComment();
+  });
+  if (uiCmtToggle) uiCmtToggle.addEventListener('click', function () {
+    uiCmtExpanded = !uiCmtExpanded;
+    renderCommentBlock(uiCmtList, uiCmtToggle, uiCmtCount, uiComments, uiCmtExpanded);
+  });
+  if (myCmtToggle) myCmtToggle.addEventListener('click', function () {
+    myCmtExpanded = !myCmtExpanded;
+    renderCommentBlock(myCmtList, myCmtToggle, myCmtCount, myComments, myCmtExpanded);
+  });
   // 点聊天顶部对方头像 → 看他的资料
   if (peerAvatar) peerAvatar.addEventListener('click', function () {
     if (peer) openUserInfo(peer);
